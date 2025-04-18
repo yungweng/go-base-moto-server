@@ -76,14 +76,16 @@ func New(enableCORS bool) (*chi.Mux, error) {
 	// Initialize stores
 	userStore := database.NewUserStore(db)
 	studentStore := database.NewStudentStore(db)
+	timespanStore := database.NewTimespanStore(db)
 
 	// Create API resources
 	userAPI := user.NewResource(userStore, authStore)
 	studentAPI := student.NewResource(studentStore, authStore)
 
-	// Connect RFID API with User and Student stores for tag tracking
+	// Connect RFID API with User, Student, and Timespan stores for tag tracking
 	rfidAPI.SetUserStore(userStore)
 	rfidAPI.SetStudentStore(studentStore)
+	rfidAPI.SetTimespanStore(timespanStore)
 
 	groupStore := database.NewGroupStore(db)
 	groupAPI := group.NewResource(groupStore, authStore)

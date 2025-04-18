@@ -20,9 +20,10 @@ import (
 
 // API provides RFID handlers.
 type API struct {
-	store        RFIDStore
-	userStore    UserStore
-	studentStore StudentStore
+	store         RFIDStore
+	userStore     UserStore
+	studentStore  StudentStore
+	timespanStore TimespanStore
 }
 
 // UserStore defines operations needed from the user store
@@ -35,6 +36,16 @@ type StudentStore interface {
 	GetStudentByCustomUserID(ctx context.Context, customUserID int64) (*models.Student, error)
 	UpdateStudentLocation(ctx context.Context, id int64, locations map[string]bool) error
 	ListStudents(ctx context.Context, filters map[string]interface{}) ([]models.Student, error)
+	CreateStudentVisit(ctx context.Context, studentID, roomID, timespanID int64) (*models.Visit, error)
+	GetStudentVisits(ctx context.Context, studentID int64, date *time.Time) ([]models.Visit, error)
+	GetRoomVisits(ctx context.Context, roomID int64, date *time.Time, active bool) ([]models.Visit, error)
+}
+
+// TimespanStore defines operations needed from the timespan store
+type TimespanStore interface {
+	CreateTimespan(ctx context.Context, startTime time.Time, endTime *time.Time) (*models.Timespan, error)
+	GetTimespan(ctx context.Context, id int64) (*models.Timespan, error)
+	UpdateTimespanEndTime(ctx context.Context, id int64, endTime time.Time) error
 }
 
 // NewAPI configures and returns RFID API.
@@ -56,6 +67,11 @@ func (a *API) SetStudentStore(studentStore StudentStore) {
 	a.studentStore = studentStore
 }
 
+// SetTimespanStore sets the timespan store for RFID API
+func (a *API) SetTimespanStore(timespanStore TimespanStore) {
+	a.timespanStore = timespanStore
+}
+
 // Router provides RFID routes.
 func (a *API) Router() *chi.Mux {
 	r := chi.NewRouter()
@@ -71,6 +87,11 @@ func (a *API) Router() *chi.Mux {
 	r.Post("/room-entry", a.handleRoomEntry)
 	r.Post("/room-exit", a.handleRoomExit)
 	r.Get("/room-occupancy", a.handleGetRoomOccupancy)
+
+	// Student visit records
+	r.Get("/student/{id}/visits", a.handleGetStudentVisits)
+	r.Get("/room/{id}/visits", a.handleGetRoomVisits)
+	r.Get("/visits/today", a.handleGetTodayVisits)
 
 	// Endpoints for Tauri App
 	r.Post("/app/sync", a.handleTauriSync)
@@ -388,7 +409,33 @@ func (a *API) handleRoomEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Record the room entry
+	// Create a timespan for the visit
+	var timespan *models.Timespan
+	if a.timespanStore != nil {
+		// Create timespan with start time now and no end time
+		timespan, err = a.timespanStore.CreateTimespan(ctx, time.Now(), nil)
+		if err != nil {
+			log.WithError(err).Error("Failed to create timespan for visit")
+			render.Render(w, r, ErrInternalServer(err))
+			return
+		}
+
+		// Create a proper visit record
+		visit, err := a.studentStore.CreateStudentVisit(ctx, student.ID, data.RoomID, timespan.ID)
+		if err != nil {
+			log.WithError(err).Error("Failed to create student visit")
+			// Don't return, we'll still update location
+		} else {
+			log.WithFields(logrus.Fields{
+				"visit_id":    visit.ID,
+				"student_id":  student.ID,
+				"room_id":     data.RoomID,
+				"timespan_id": timespan.ID,
+			}).Info("Created visit record")
+		}
+	}
+
+	// Record the room entry in the RFID system as well
 	err = a.store.RecordRoomEntry(ctx, student.ID, data.RoomID)
 	if err != nil {
 		log.WithError(err).Error("Failed to record room entry")
@@ -513,7 +560,34 @@ func (a *API) handleRoomExit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Record the room exit
+	// Find active visit records for this student in this room and end them
+	if a.timespanStore != nil && a.studentStore != nil {
+		// Get room visits that are active (with a focus on those with null end times)
+		activeVisits, err := a.studentStore.GetRoomVisits(ctx, data.RoomID, nil, true)
+		if err != nil {
+			log.WithError(err).Warning("Failed to get active visits for this room")
+		} else {
+			// Look for this student's active visits
+			for _, visit := range activeVisits {
+				if visit.StudentID == student.ID && visit.Timespan != nil && visit.Timespan.EndTime == nil {
+					// Update the visit timespan to end now
+					err = a.timespanStore.UpdateTimespanEndTime(ctx, visit.TimespanID, time.Now())
+					if err != nil {
+						log.WithError(err).Error("Failed to update timespan end time")
+					} else {
+						log.WithFields(logrus.Fields{
+							"visit_id":    visit.ID,
+							"student_id":  student.ID,
+							"room_id":     data.RoomID,
+							"timespan_id": visit.TimespanID,
+						}).Info("Ended visit record")
+					}
+				}
+			}
+		}
+	}
+
+	// Record the room exit in the RFID system as well
 	err = a.store.RecordRoomExit(ctx, student.ID, data.RoomID)
 	if err != nil {
 		log.WithError(err).Error("Failed to record room exit")
@@ -602,6 +676,178 @@ func (a *API) handleGetRoomOccupancy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	render.JSON(w, r, occupancy)
+}
+
+// handleGetStudentVisits returns visits for a specific student
+func (a *API) handleGetStudentVisits(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get the logger
+	logger := logging.GetLogEntry(r)
+	log := logrus.NewEntry(logrus.StandardLogger())
+	if fieldLogger, ok := logger.(*logrus.Entry); ok {
+		log = fieldLogger
+	} else if logger != nil {
+		log = logrus.NewEntry(logrus.StandardLogger()).WithFields(logrus.Fields{
+			"request_id": middleware.GetReqID(ctx),
+			"method":     r.Method,
+			"path":       r.URL.Path,
+		})
+	}
+
+	// Get student ID from URL parameter
+	studentIDStr := chi.URLParam(r, "id")
+	studentID, err := strconv.ParseInt(studentIDStr, 10, 64)
+	if err != nil {
+		log.WithError(err).Error("Invalid student ID")
+		render.Render(w, r, ErrInvalidRequest(fmt.Errorf("invalid student ID: %s", studentIDStr)))
+		return
+	}
+
+	// Check if date filter is provided
+	dateStr := r.URL.Query().Get("date")
+	var date *time.Time
+
+	if dateStr != "" {
+		parsedDate, err := time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			log.WithError(err).Error("Invalid date format")
+			render.Render(w, r, ErrInvalidRequest(fmt.Errorf("invalid date format, use YYYY-MM-DD: %s", dateStr)))
+			return
+		}
+		date = &parsedDate
+	}
+
+	// Get student visits
+	if a.studentStore == nil {
+		render.Render(w, r, ErrInternalServer(fmt.Errorf("student store not configured")))
+		return
+	}
+
+	visits, err := a.studentStore.GetStudentVisits(ctx, studentID, date)
+	if err != nil {
+		log.WithError(err).Error("Failed to get student visits")
+		render.Render(w, r, ErrInternalServer(err))
+		return
+	}
+
+	render.JSON(w, r, visits)
+}
+
+// handleGetRoomVisits returns visits for a specific room
+func (a *API) handleGetRoomVisits(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get the logger
+	logger := logging.GetLogEntry(r)
+	log := logrus.NewEntry(logrus.StandardLogger())
+	if fieldLogger, ok := logger.(*logrus.Entry); ok {
+		log = fieldLogger
+	} else if logger != nil {
+		log = logrus.NewEntry(logrus.StandardLogger()).WithFields(logrus.Fields{
+			"request_id": middleware.GetReqID(ctx),
+			"method":     r.Method,
+			"path":       r.URL.Path,
+		})
+	}
+
+	// Get room ID from URL parameter
+	roomIDStr := chi.URLParam(r, "id")
+	roomID, err := strconv.ParseInt(roomIDStr, 10, 64)
+	if err != nil {
+		log.WithError(err).Error("Invalid room ID")
+		render.Render(w, r, ErrInvalidRequest(fmt.Errorf("invalid room ID: %s", roomIDStr)))
+		return
+	}
+
+	// Check if date filter is provided
+	dateStr := r.URL.Query().Get("date")
+	var date *time.Time
+
+	if dateStr != "" {
+		parsedDate, err := time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			log.WithError(err).Error("Invalid date format")
+			render.Render(w, r, ErrInvalidRequest(fmt.Errorf("invalid date format, use YYYY-MM-DD: %s", dateStr)))
+			return
+		}
+		date = &parsedDate
+	}
+
+	// Check if active filter is provided
+	activeStr := r.URL.Query().Get("active")
+	active := false
+	if activeStr == "true" || activeStr == "1" {
+		active = true
+	}
+
+	// Get room visits
+	if a.studentStore == nil {
+		render.Render(w, r, ErrInternalServer(fmt.Errorf("student store not configured")))
+		return
+	}
+
+	visits, err := a.studentStore.GetRoomVisits(ctx, roomID, date, active)
+	if err != nil {
+		log.WithError(err).Error("Failed to get room visits")
+		render.Render(w, r, ErrInternalServer(err))
+		return
+	}
+
+	render.JSON(w, r, visits)
+}
+
+// handleGetTodayVisits returns all visits for today
+func (a *API) handleGetTodayVisits(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get the logger
+	logger := logging.GetLogEntry(r)
+	log := logrus.NewEntry(logrus.StandardLogger())
+	if fieldLogger, ok := logger.(*logrus.Entry); ok {
+		log = fieldLogger
+	} else if logger != nil {
+		log = logrus.NewEntry(logrus.StandardLogger()).WithFields(logrus.Fields{
+			"request_id": middleware.GetReqID(ctx),
+			"method":     r.Method,
+			"path":       r.URL.Path,
+		})
+	}
+
+	// Use today's date
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	// Get active visits for all rooms
+	if a.studentStore == nil {
+		render.Render(w, r, ErrInternalServer(fmt.Errorf("student store not configured")))
+		return
+	}
+
+	// For this endpoint, we'll check all rooms with active visits
+	// First, let's get a list of all rooms with current occupancy
+	roomsData, err := a.store.GetCurrentRooms(ctx)
+	if err != nil {
+		log.WithError(err).Error("Failed to get rooms with occupancy")
+		render.Render(w, r, ErrInternalServer(err))
+		return
+	}
+
+	// Get visits for each room
+	allVisits := []models.Visit{}
+	for _, room := range roomsData {
+		visits, err := a.studentStore.GetRoomVisits(ctx, room.RoomID, &today, false)
+		if err != nil {
+			log.WithFields(logrus.Fields{
+				"room_id": room.RoomID,
+				"error":   err.Error(),
+			}).Warning("Failed to get visits for room")
+			continue
+		}
+		allVisits = append(allVisits, visits...)
+	}
+
+	render.JSON(w, r, allVisits)
 }
 
 // handleStudentTracking processes RFID tags for student tracking
