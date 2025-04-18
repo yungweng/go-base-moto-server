@@ -42,6 +42,50 @@ func (m *MockRFIDStore) SaveTauriTags(ctx context.Context, deviceID string, tags
 	return args.Error(0)
 }
 
+func (m *MockRFIDStore) RegisterDevice(ctx context.Context, deviceID, name, description string) (*TauriDevice, string, error) {
+	args := m.Called(ctx, deviceID, name, description)
+	if args.Get(0) == nil {
+		return nil, "", args.Error(2)
+	}
+	return args.Get(0).(*TauriDevice), args.String(1), args.Error(2)
+}
+
+func (m *MockRFIDStore) GetDevice(ctx context.Context, deviceID string) (*TauriDevice, error) {
+	args := m.Called(ctx, deviceID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*TauriDevice), args.Error(1)
+}
+
+func (m *MockRFIDStore) GetDeviceByAPIKey(ctx context.Context, apiKey string) (*TauriDevice, error) {
+	args := m.Called(ctx, apiKey)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*TauriDevice), args.Error(1)
+}
+
+func (m *MockRFIDStore) UpdateDevice(ctx context.Context, deviceID string, updates map[string]interface{}) error {
+	args := m.Called(ctx, deviceID, updates)
+	return args.Error(0)
+}
+
+func (m *MockRFIDStore) ListDevices(ctx context.Context) ([]TauriDevice, error) {
+	args := m.Called(ctx)
+	return args.Get(0).([]TauriDevice), args.Error(1)
+}
+
+func (m *MockRFIDStore) RecordDeviceSync(ctx context.Context, deviceID, ipAddress, appVersion string, tagsCount int) error {
+	args := m.Called(ctx, deviceID, ipAddress, appVersion, tagsCount)
+	return args.Error(0)
+}
+
+func (m *MockRFIDStore) GetDeviceSyncHistory(ctx context.Context, deviceID string, limit int) ([]DeviceSyncHistory, error) {
+	args := m.Called(ctx, deviceID, limit)
+	return args.Get(0).([]DeviceSyncHistory), args.Error(1)
+}
+
 // Mock UserStore
 type MockUserStore struct {
 	mock.Mock

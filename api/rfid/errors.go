@@ -49,3 +49,13 @@ func ErrInternalServer(err error) render.Renderer {
 		ErrorText:      err.Error(),
 	}
 }
+
+// ErrUnauthorized returns a 401 Unauthorized error response.
+func ErrUnauthorized(err error) render.Renderer {
+	return &ErrResponse{
+		Err:            err,
+		HTTPStatusCode: http.StatusUnauthorized,
+		StatusText:     "Unauthorized.",
+		ErrorText:      err.Error(),
+	}
+}

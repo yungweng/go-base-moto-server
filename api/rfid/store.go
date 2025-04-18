@@ -2,7 +2,10 @@ package rfid
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/uptrace/bun"
@@ -20,6 +23,15 @@ type RFIDStore interface {
 	RecordRoomExit(ctx context.Context, studentID, roomID int64) error
 	GetRoomOccupancy(ctx context.Context, roomID int64) (*RoomOccupancyData, error)
 	GetCurrentRooms(ctx context.Context) ([]RoomOccupancyData, error)
+
+	// Tauri device management operations
+	RegisterDevice(ctx context.Context, deviceID, name, description string) (*TauriDevice, string, error)
+	GetDevice(ctx context.Context, deviceID string) (*TauriDevice, error)
+	GetDeviceByAPIKey(ctx context.Context, apiKey string) (*TauriDevice, error)
+	UpdateDevice(ctx context.Context, deviceID string, updates map[string]interface{}) error
+	ListDevices(ctx context.Context) ([]TauriDevice, error)
+	RecordDeviceSync(ctx context.Context, deviceID, ipAddress, appVersion string, tagsCount int) error
+	GetDeviceSyncHistory(ctx context.Context, deviceID string, limit int) ([]DeviceSyncHistory, error)
 }
 
 type rfidStore struct {
@@ -234,4 +246,184 @@ func (s *rfidStore) GetCurrentRooms(ctx context.Context) ([]RoomOccupancyData, e
 	}
 
 	return result, nil
+}
+
+// generateAPIKey creates a secure random API key
+func generateAPIKey() (string, error) {
+	b := make([]byte, 32)
+	_, err := rand.Read(b)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(base64.URLEncoding.EncodeToString(b), "="), nil
+}
+
+// RegisterDevice creates a new Tauri device registration
+func (s *rfidStore) RegisterDevice(ctx context.Context, deviceID, name, description string) (*TauriDevice, string, error) {
+	// Check if device already exists
+	var existingDevice TauriDevice
+	err := s.db.NewSelect().
+		Model(&existingDevice).
+		Where("device_id = ?", deviceID).
+		Scan(ctx)
+
+	if err == nil {
+		return nil, "", fmt.Errorf("device with ID %s already exists", deviceID)
+	}
+
+	// Generate a new API key
+	apiKey, err := generateAPIKey()
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to generate API key: %w", err)
+	}
+
+	// Create the new device
+	now := time.Now()
+	device := &TauriDevice{
+		DeviceID:    deviceID,
+		Name:        name,
+		Description: description,
+		Status:      "active",
+		APIKey:      apiKey,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	_, err = s.db.NewInsert().
+		Model(device).
+		Exec(ctx)
+
+	if err != nil {
+		return nil, "", err
+	}
+
+	return device, apiKey, nil
+}
+
+// GetDevice retrieves a device by its ID
+func (s *rfidStore) GetDevice(ctx context.Context, deviceID string) (*TauriDevice, error) {
+	device := new(TauriDevice)
+	err := s.db.NewSelect().
+		Model(device).
+		Where("device_id = ?", deviceID).
+		Scan(ctx)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return device, nil
+}
+
+// GetDeviceByAPIKey retrieves a device by its API key
+func (s *rfidStore) GetDeviceByAPIKey(ctx context.Context, apiKey string) (*TauriDevice, error) {
+	device := new(TauriDevice)
+	err := s.db.NewSelect().
+		Model(device).
+		Where("api_key = ?", apiKey).
+		Scan(ctx)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return device, nil
+}
+
+// UpdateDevice updates a device's information
+func (s *rfidStore) UpdateDevice(ctx context.Context, deviceID string, updates map[string]interface{}) error {
+	updates["updated_at"] = time.Now()
+
+	query := s.db.NewUpdate().Table("tauri_devices")
+
+	// Add each update to the query
+	for key, value := range updates {
+		query = query.Set(fmt.Sprintf("%s = ?", key), value)
+	}
+
+	// Execute the query
+	res, err := query.Where("device_id = ?", deviceID).Exec(ctx)
+
+	if err != nil {
+		return err
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rows == 0 {
+		return fmt.Errorf("device with ID %s not found", deviceID)
+	}
+
+	return nil
+}
+
+// ListDevices returns all registered devices
+func (s *rfidStore) ListDevices(ctx context.Context) ([]TauriDevice, error) {
+	var devices []TauriDevice
+	err := s.db.NewSelect().
+		Model(&devices).
+		Order("created_at DESC").
+		Scan(ctx)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return devices, nil
+}
+
+// RecordDeviceSync logs a sync from a device
+func (s *rfidStore) RecordDeviceSync(ctx context.Context, deviceID, ipAddress, appVersion string, tagsCount int) error {
+	now := time.Now()
+
+	// Update the device's last sync info
+	updateErr := s.UpdateDevice(ctx, deviceID, map[string]interface{}{
+		"last_sync_at": now,
+		"last_ip":      ipAddress,
+	})
+
+	if updateErr != nil {
+		// Just log the error, don't fail the whole sync
+		fmt.Printf("Failed to update device last sync info: %v\n", updateErr)
+	}
+
+	// Record the sync history
+	syncHistory := &DeviceSyncHistory{
+		DeviceID:   deviceID,
+		SyncAt:     now,
+		IPAddress:  ipAddress,
+		TagsCount:  tagsCount,
+		AppVersion: appVersion,
+		CreatedAt:  now,
+	}
+
+	_, err := s.db.NewInsert().
+		Model(syncHistory).
+		Exec(ctx)
+
+	return err
+}
+
+// GetDeviceSyncHistory retrieves sync history for a device
+func (s *rfidStore) GetDeviceSyncHistory(ctx context.Context, deviceID string, limit int) ([]DeviceSyncHistory, error) {
+	if limit <= 0 {
+		limit = 50 // Default limit
+	}
+
+	var history []DeviceSyncHistory
+	err := s.db.NewSelect().
+		Model(&history).
+		Where("device_id = ?", deviceID).
+		Order("sync_at DESC").
+		Limit(limit).
+		Scan(ctx)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return history, nil
 }

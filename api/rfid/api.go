@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -97,6 +98,15 @@ func (a *API) Router() *chi.Mux {
 	r.Post("/app/sync", a.handleTauriSync)
 	r.Get("/app/status", a.handleTauriStatus)
 
+	// Device management endpoints
+	r.Route("/devices", func(r chi.Router) {
+		r.Get("/", a.handleListDevices)
+		r.Post("/", a.handleRegisterDevice)
+		r.Get("/{device_id}", a.handleGetDevice)
+		r.Put("/{device_id}", a.handleUpdateDevice)
+		r.Get("/{device_id}/sync-history", a.handleGetDeviceSyncHistory)
+	})
+
 	return r
 }
 
@@ -148,6 +158,32 @@ func (a *API) handleTauriSync(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	// Get API key from Authorization header
+	apiKey := r.Header.Get("Authorization")
+	if apiKey == "" {
+		log.Error("Missing API key")
+		render.Render(w, r, ErrUnauthorized(fmt.Errorf("API key required")))
+		return
+	}
+
+	// Strip "Bearer " prefix if present
+	apiKey = strings.TrimPrefix(apiKey, "Bearer ")
+
+	// Validate API key and get device
+	device, err := a.store.GetDeviceByAPIKey(ctx, apiKey)
+	if err != nil {
+		log.WithError(err).Error("Invalid API key")
+		render.Render(w, r, ErrUnauthorized(fmt.Errorf("invalid API key")))
+		return
+	}
+
+	// Check if device is active
+	if device.Status != "active" {
+		log.WithField("device_id", device.DeviceID).Error("Inactive device attempted sync")
+		render.Render(w, r, ErrUnauthorized(fmt.Errorf("device is not active")))
+		return
+	}
+
 	// Parse request data
 	data := &TauriSyncRequest{}
 	if err := render.Bind(r, data); err != nil {
@@ -156,17 +192,42 @@ func (a *API) handleTauriSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ensure the device ID in the request matches the API key's device
+	if data.DeviceID != device.DeviceID {
+		log.WithFields(logrus.Fields{
+			"request_device_id": data.DeviceID,
+			"auth_device_id":    device.DeviceID,
+		}).Error("Device ID mismatch")
+		render.Render(w, r, ErrUnauthorized(fmt.Errorf("device ID mismatch")))
+		return
+	}
+
 	log.WithFields(logrus.Fields{
-		"device_id":  data.DeviceID,
-		"tags_count": len(data.Data),
+		"device_id":   data.DeviceID,
+		"tags_count":  len(data.Data),
+		"app_version": data.AppVersion,
 	}).Info("Processing Tauri sync request")
 
 	// Save the tags from the Tauri app
-	err := a.store.SaveTauriTags(ctx, data.DeviceID, data.Data)
+	err = a.store.SaveTauriTags(ctx, data.DeviceID, data.Data)
 	if err != nil {
 		log.WithError(err).Error("Failed to save tags from Tauri app")
 		render.Render(w, r, ErrInternalServer(err))
 		return
+	}
+
+	// Record the sync event
+	ipAddress := r.RemoteAddr
+	// Extract just the IP part if there's a port
+	if strings.Contains(ipAddress, ":") {
+		ipAddress = strings.Split(ipAddress, ":")[0]
+	}
+
+	// Record sync regardless of success of student processing
+	err = a.store.RecordDeviceSync(ctx, data.DeviceID, ipAddress, data.AppVersion, len(data.Data))
+	if err != nil {
+		log.WithError(err).Warning("Failed to record device sync")
+		// Continue processing anyway
 	}
 
 	// Process student tracking for all tags
@@ -242,6 +303,28 @@ func (a *API) handleTauriStatus(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	// Check for API key in both query string and Authorization header
+	apiKey := r.URL.Query().Get("api_key")
+	if apiKey == "" {
+		apiKey = r.Header.Get("Authorization")
+		// Strip "Bearer " prefix if present
+		apiKey = strings.TrimPrefix(apiKey, "Bearer ")
+	}
+
+	// Status requests can work without authentication, but if API key is provided, validate it
+	var device *TauriDevice
+	if apiKey != "" {
+		var err error
+		device, err = a.store.GetDeviceByAPIKey(ctx, apiKey)
+		if err != nil {
+			log.WithError(err).Warning("Invalid API key in status request")
+			// Continue anyway, but don't include device-specific info
+		} else if device.Status != "active" {
+			log.WithField("device_id", device.DeviceID).Warning("Inactive device requested status")
+			// Continue anyway, but don't include device-specific info
+		}
+	}
+
 	log.Info("Processing Tauri app status request")
 
 	// Get tag statistics
@@ -303,6 +386,20 @@ func (a *API) handleTauriStatus(w http.ResponseWriter, r *http.Request) {
 		Timestamp: time.Now(),
 		Stats:     stats,
 		Version:   "1.0.0", // You might want to get this from your app configuration
+	}
+
+	// Record the status check if we have a valid device
+	if device != nil {
+		ipAddress := r.RemoteAddr
+		// Extract just the IP part if there's a port
+		if strings.Contains(ipAddress, ":") {
+			ipAddress = strings.Split(ipAddress, ":")[0]
+		}
+
+		// Don't return error if this fails, just log it
+		_ = a.store.UpdateDevice(ctx, device.DeviceID, map[string]interface{}{
+			"last_ip": ipAddress,
+		})
 	}
 
 	render.JSON(w, r, status)
@@ -848,6 +945,254 @@ func (a *API) handleGetTodayVisits(w http.ResponseWriter, r *http.Request) {
 	}
 
 	render.JSON(w, r, allVisits)
+}
+
+// handleRegisterDevice registers a new Tauri app device
+func (a *API) handleRegisterDevice(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := logging.GetLogEntry(r)
+
+	// Create a logger entry
+	log := logrus.NewEntry(logrus.StandardLogger())
+	if fieldLogger, ok := logger.(*logrus.Entry); ok {
+		log = fieldLogger
+	} else if logger != nil {
+		log = logrus.NewEntry(logrus.StandardLogger()).WithFields(logrus.Fields{
+			"request_id": middleware.GetReqID(ctx),
+			"method":     r.Method,
+			"path":       r.URL.Path,
+		})
+	}
+
+	// Parse the request
+	data := &DeviceRegisterRequest{}
+	if err := render.Bind(r, data); err != nil {
+		log.WithError(err).Error("Failed to parse device registration request")
+		render.Render(w, r, ErrInvalidRequest(err))
+		return
+	}
+
+	log.WithFields(logrus.Fields{
+		"device_id": data.DeviceID,
+		"name":      data.Name,
+	}).Info("Processing device registration request")
+
+	// Register the device
+	device, apiKey, err := a.store.RegisterDevice(ctx, data.DeviceID, data.Name, data.Description)
+	if err != nil {
+		log.WithError(err).Error("Failed to register device")
+		render.Render(w, r, ErrInternalServer(err))
+		return
+	}
+
+	// Return the registration response with the API key
+	// Note: This is the only time the API key will be returned
+	response := &DeviceRegisterResponse{
+		Success:  true,
+		Message:  "Device registered successfully",
+		Device:   *device,
+		APIKey:   apiKey,
+		DeviceID: device.DeviceID,
+	}
+
+	log.WithField("device_id", device.DeviceID).Info("Device registered successfully")
+
+	render.Status(r, http.StatusCreated)
+	render.JSON(w, r, response)
+}
+
+// handleGetDevice retrieves a device by ID
+func (a *API) handleGetDevice(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := logging.GetLogEntry(r)
+
+	// Create a logger entry
+	log := logrus.NewEntry(logrus.StandardLogger())
+	if fieldLogger, ok := logger.(*logrus.Entry); ok {
+		log = fieldLogger
+	} else if logger != nil {
+		log = logrus.NewEntry(logrus.StandardLogger()).WithFields(logrus.Fields{
+			"request_id": middleware.GetReqID(ctx),
+			"method":     r.Method,
+			"path":       r.URL.Path,
+		})
+	}
+
+	// Get device ID from URL parameter
+	deviceID := chi.URLParam(r, "device_id")
+	if deviceID == "" {
+		log.Error("Device ID is empty")
+		render.Render(w, r, ErrInvalidRequest(fmt.Errorf("device ID is required")))
+		return
+	}
+
+	log.WithField("device_id", deviceID).Info("Getting device")
+
+	// Get the device
+	device, err := a.store.GetDevice(ctx, deviceID)
+	if err != nil {
+		log.WithError(err).Error("Failed to get device")
+		render.Render(w, r, ErrInternalServer(err))
+		return
+	}
+
+	render.JSON(w, r, device)
+}
+
+// handleUpdateDevice updates a device's information
+func (a *API) handleUpdateDevice(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := logging.GetLogEntry(r)
+
+	// Create a logger entry
+	log := logrus.NewEntry(logrus.StandardLogger())
+	if fieldLogger, ok := logger.(*logrus.Entry); ok {
+		log = fieldLogger
+	} else if logger != nil {
+		log = logrus.NewEntry(logrus.StandardLogger()).WithFields(logrus.Fields{
+			"request_id": middleware.GetReqID(ctx),
+			"method":     r.Method,
+			"path":       r.URL.Path,
+		})
+	}
+
+	// Get device ID from URL parameter
+	deviceID := chi.URLParam(r, "device_id")
+	if deviceID == "" {
+		log.Error("Device ID is empty")
+		render.Render(w, r, ErrInvalidRequest(fmt.Errorf("device ID is required")))
+		return
+	}
+
+	// Parse the request
+	data := &DeviceUpdateRequest{}
+	if err := render.Bind(r, data); err != nil {
+		log.WithError(err).Error("Failed to parse device update request")
+		render.Render(w, r, ErrInvalidRequest(err))
+		return
+	}
+
+	log.WithFields(logrus.Fields{
+		"device_id": deviceID,
+	}).Info("Updating device")
+
+	// Build updates map
+	updates := make(map[string]interface{})
+	if data.Name != "" {
+		updates["name"] = data.Name
+	}
+	if data.Description != "" {
+		updates["description"] = data.Description
+	}
+	if data.Status != "" {
+		updates["status"] = data.Status
+	}
+
+	// Update the device
+	if len(updates) > 0 {
+		err := a.store.UpdateDevice(ctx, deviceID, updates)
+		if err != nil {
+			log.WithError(err).Error("Failed to update device")
+			render.Render(w, r, ErrInternalServer(err))
+			return
+		}
+	}
+
+	// Get the updated device
+	device, err := a.store.GetDevice(ctx, deviceID)
+	if err != nil {
+		log.WithError(err).Error("Failed to get updated device")
+		render.Render(w, r, ErrInternalServer(err))
+		return
+	}
+
+	log.WithField("device_id", deviceID).Info("Device updated successfully")
+
+	render.JSON(w, r, device)
+}
+
+// handleListDevices retrieves all registered devices
+func (a *API) handleListDevices(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := logging.GetLogEntry(r)
+
+	// Create a logger entry
+	log := logrus.NewEntry(logrus.StandardLogger())
+	if fieldLogger, ok := logger.(*logrus.Entry); ok {
+		log = fieldLogger
+	} else if logger != nil {
+		log = logrus.NewEntry(logrus.StandardLogger()).WithFields(logrus.Fields{
+			"request_id": middleware.GetReqID(ctx),
+			"method":     r.Method,
+			"path":       r.URL.Path,
+		})
+	}
+
+	log.Info("Getting all devices")
+
+	// Get the devices
+	devices, err := a.store.ListDevices(ctx)
+	if err != nil {
+		log.WithError(err).Error("Failed to get devices")
+		render.Render(w, r, ErrInternalServer(err))
+		return
+	}
+
+	render.JSON(w, r, devices)
+}
+
+// handleGetDeviceSyncHistory retrieves sync history for a device
+func (a *API) handleGetDeviceSyncHistory(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := logging.GetLogEntry(r)
+
+	// Create a logger entry
+	log := logrus.NewEntry(logrus.StandardLogger())
+	if fieldLogger, ok := logger.(*logrus.Entry); ok {
+		log = fieldLogger
+	} else if logger != nil {
+		log = logrus.NewEntry(logrus.StandardLogger()).WithFields(logrus.Fields{
+			"request_id": middleware.GetReqID(ctx),
+			"method":     r.Method,
+			"path":       r.URL.Path,
+		})
+	}
+
+	// Get device ID from URL parameter
+	deviceID := chi.URLParam(r, "device_id")
+	if deviceID == "" {
+		log.Error("Device ID is empty")
+		render.Render(w, r, ErrInvalidRequest(fmt.Errorf("device ID is required")))
+		return
+	}
+
+	// Get limit from query parameter
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50 // Default limit
+	if limitStr != "" {
+		var err error
+		limit, err = strconv.Atoi(limitStr)
+		if err != nil {
+			log.WithError(err).Error("Invalid limit")
+			render.Render(w, r, ErrInvalidRequest(fmt.Errorf("invalid limit: %s", limitStr)))
+			return
+		}
+	}
+
+	log.WithFields(logrus.Fields{
+		"device_id": deviceID,
+		"limit":     limit,
+	}).Info("Getting device sync history")
+
+	// Get the sync history
+	history, err := a.store.GetDeviceSyncHistory(ctx, deviceID, limit)
+	if err != nil {
+		log.WithError(err).Error("Failed to get device sync history")
+		render.Render(w, r, ErrInternalServer(err))
+		return
+	}
+
+	render.JSON(w, r, history)
 }
 
 // handleStudentTracking processes RFID tags for student tracking

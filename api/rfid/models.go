@@ -1,6 +1,7 @@
 package rfid
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -30,8 +31,9 @@ func (t *TagReadRequest) Bind(r *http.Request) error {
 
 // TauriSyncRequest is the payload for Tauri app sync endpoint
 type TauriSyncRequest struct {
-	DeviceID string    `json:"device_id"`
-	Data     []SyncTag `json:"data"`
+	DeviceID   string    `json:"device_id"`
+	Data       []SyncTag `json:"data"`
+	AppVersion string    `json:"app_version,omitempty"`
 }
 
 // SyncTag represents a tag record from the Tauri app
@@ -43,7 +45,9 @@ type SyncTag struct {
 
 // Bind preprocesses a TauriSyncRequest
 func (t *TauriSyncRequest) Bind(r *http.Request) error {
-	// Validation logic can be added here
+	if t.DeviceID == "" {
+		return fmt.Errorf("device_id is required")
+	}
 	return nil
 }
 
@@ -67,6 +71,70 @@ type AppStatus struct {
 	Timestamp time.Time `json:"timestamp"`
 	Stats     AppStats  `json:"stats"`
 	Version   string    `json:"version"`
+}
+
+// TauriDevice represents a registered Tauri desktop application device
+type TauriDevice struct {
+	ID          int64      `json:"id" bun:"id,pk,autoincrement"`
+	DeviceID    string     `json:"device_id" bun:"device_id,notnull,unique"`
+	Name        string     `json:"name" bun:"name,notnull"`
+	Description string     `json:"description,omitempty" bun:"description"`
+	LastSyncAt  *time.Time `json:"last_sync_at,omitempty" bun:"last_sync_at"`
+	LastIP      string     `json:"last_ip,omitempty" bun:"last_ip"`
+	Status      string     `json:"status" bun:"status,notnull"`
+	APIKey      string     `json:"-" bun:"api_key,notnull,unique"` // Not exposed in JSON
+	CreatedAt   time.Time  `json:"created_at" bun:"created_at,notnull"`
+	UpdatedAt   time.Time  `json:"updated_at" bun:"updated_at,notnull"`
+}
+
+// DeviceRegisterRequest is the payload for registering a new Tauri app device
+type DeviceRegisterRequest struct {
+	DeviceID    string `json:"device_id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// Bind preprocesses a DeviceRegisterRequest
+func (req *DeviceRegisterRequest) Bind(r *http.Request) error {
+	if req.DeviceID == "" {
+		return fmt.Errorf("device_id is required")
+	}
+	if req.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	return nil
+}
+
+// DeviceRegisterResponse is the response for registering a new Tauri app device
+type DeviceRegisterResponse struct {
+	Success  bool        `json:"success"`
+	Message  string      `json:"message"`
+	Device   TauriDevice `json:"device"`
+	APIKey   string      `json:"api_key"` // Visible only in registration response
+	DeviceID string      `json:"device_id"`
+}
+
+// DeviceUpdateRequest is the payload for updating a Tauri app device
+type DeviceUpdateRequest struct {
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	Status      string `json:"status,omitempty"`
+}
+
+// Bind preprocesses a DeviceUpdateRequest
+func (req *DeviceUpdateRequest) Bind(r *http.Request) error {
+	return nil
+}
+
+// DeviceSyncHistory represents a record of a device synchronization
+type DeviceSyncHistory struct {
+	ID         int64     `json:"id" bun:"id,pk,autoincrement"`
+	DeviceID   string    `json:"device_id" bun:"device_id,notnull"`
+	SyncAt     time.Time `json:"sync_at" bun:"sync_at,notnull"`
+	IPAddress  string    `json:"ip_address,omitempty" bun:"ip_address"`
+	TagsCount  int       `json:"tags_count" bun:"tags_count,notnull"`
+	AppVersion string    `json:"app_version,omitempty" bun:"app_version"`
+	CreatedAt  time.Time `json:"created_at" bun:"created_at,notnull"`
 }
 
 // RoomEntryRequest represents a student entering a room with an RFID tag
