@@ -1,8 +1,10 @@
 package room
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/dhax/go-base/models"
 	"github.com/go-chi/chi/v5"
@@ -39,7 +41,14 @@ func (a *API) Router() *chi.Mux {
 	r.Get("/{id}/current_occupancy", a.handleGetCurrentRoomOccupancy)
 	r.Post("/{id}/register_tablet", a.handleRegisterTablet)
 	r.Post("/{id}/unregister_tablet", a.handleUnregisterTablet)
-	r.Post("/merge", a.handleMergeRooms)
+	r.Get("/{id}/combined_group", a.handleGetCombinedGroupForRoom)
+
+	// Combined groups endpoints
+	r.Route("/combined_groups", func(r chi.Router) {
+		r.Get("/", a.handleGetActiveCombinedGroups)
+		r.Post("/merge", a.handleMergeRooms)
+		r.Delete("/{id}", a.handleDeactivateCombinedGroup)
+	})
 
 	// Room occupancy endpoints
 	r.Route("/occupancies", func(r chi.Router) {
@@ -317,14 +326,82 @@ func (a *API) handleUnregisterTablet(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// MergeRoomsRequest represents the request payload for merging rooms
+type MergeRoomsRequest struct {
+	SourceRoomID int64      `json:"source_room_id"`
+	TargetRoomID int64      `json:"target_room_id"`
+	Name         string     `json:"name,omitempty"`
+	ValidUntil   *time.Time `json:"valid_until,omitempty"`
+	AccessPolicy string     `json:"access_policy,omitempty"`
+}
+
+// Bind preprocesses a MergeRoomsRequest
+func (m *MergeRoomsRequest) Bind(r *http.Request) error {
+	// Validate required fields
+	if m.SourceRoomID == 0 {
+		return fmt.Errorf("source_room_id is required")
+	}
+	if m.TargetRoomID == 0 {
+		return fmt.Errorf("target_room_id is required")
+	}
+
+	// Validate that source and target are not the same
+	if m.SourceRoomID == m.TargetRoomID {
+		return fmt.Errorf("source and target rooms must be different")
+	}
+
+	// Validate access policy if provided
+	if m.AccessPolicy != "" &&
+		m.AccessPolicy != "all" &&
+		m.AccessPolicy != "first" &&
+		m.AccessPolicy != "specific" &&
+		m.AccessPolicy != "manual" {
+		return fmt.Errorf("access_policy must be one of: all, first, specific, manual")
+	}
+
+	return nil
+}
+
 // handleMergeRooms merges two rooms
 func (a *API) handleMergeRooms(w http.ResponseWriter, r *http.Request) {
-	// This is a placeholder - would need combined group functionality
-	// which depends on implementing other models first
-	render.Status(r, http.StatusNotImplemented)
-	render.JSON(w, r, map[string]interface{}{
-		"error": "Room merging is not yet implemented",
-	})
+	// Parse request body
+	data := &MergeRoomsRequest{}
+	if err := render.Bind(r, data); err != nil {
+		render.Render(w, r, ErrInvalidRequest(err))
+		return
+	}
+
+	ctx := r.Context()
+
+	// Check if both rooms exist
+	_, err := a.store.GetRoomByID(ctx, data.SourceRoomID)
+	if err != nil {
+		render.Render(w, r, ErrInvalidRequest(fmt.Errorf("source room not found: %w", err)))
+		return
+	}
+
+	_, err = a.store.GetRoomByID(ctx, data.TargetRoomID)
+	if err != nil {
+		render.Render(w, r, ErrInvalidRequest(fmt.Errorf("target room not found: %w", err)))
+		return
+	}
+
+	// Perform the merge operation
+	combinedGroup, err := a.store.MergeRooms(ctx, data.SourceRoomID, data.TargetRoomID, data.Name, data.ValidUntil, data.AccessPolicy)
+	if err != nil {
+		render.Render(w, r, ErrInternalServer(err))
+		return
+	}
+
+	// Return success response with combined group details
+	response := map[string]interface{}{
+		"success":        true,
+		"message":        "Rooms merged successfully",
+		"combined_group": combinedGroup,
+	}
+
+	render.Status(r, http.StatusCreated)
+	render.JSON(w, r, response)
 }
 
 // handleGetAllRoomOccupancies returns all room occupancies
@@ -358,4 +435,68 @@ func (a *API) handleGetRoomOccupancyByID(w http.ResponseWriter, r *http.Request)
 
 	// Render response
 	render.JSON(w, r, occupancy)
+}
+
+// handleGetCombinedGroupForRoom returns the active combined group associated with a room
+func (a *API) handleGetCombinedGroupForRoom(w http.ResponseWriter, r *http.Request) {
+	// Parse room ID from URL
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		render.Render(w, r, ErrInvalidRequest(err))
+		return
+	}
+
+	// Check if room exists
+	_, err = a.store.GetRoomByID(r.Context(), id)
+	if err != nil {
+		render.Render(w, r, ErrNotFound())
+		return
+	}
+
+	// Get combined group for the room
+	combinedGroup, err := a.store.GetCombinedGroupForRoom(r.Context(), id)
+	if err != nil {
+		render.Render(w, r, ErrNotFound())
+		return
+	}
+
+	// Render response
+	render.JSON(w, r, combinedGroup)
+}
+
+// handleGetActiveCombinedGroups returns all active combined groups
+func (a *API) handleGetActiveCombinedGroups(w http.ResponseWriter, r *http.Request) {
+	// Get all active combined groups
+	combinedGroups, err := a.store.FindActiveCombinedGroups(r.Context())
+	if err != nil {
+		render.Render(w, r, ErrInternalServer(err))
+		return
+	}
+
+	// Render response
+	render.JSON(w, r, combinedGroups)
+}
+
+// handleDeactivateCombinedGroup deactivates a combined group
+func (a *API) handleDeactivateCombinedGroup(w http.ResponseWriter, r *http.Request) {
+	// Parse combined group ID from URL
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		render.Render(w, r, ErrInvalidRequest(err))
+		return
+	}
+
+	// Deactivate the combined group
+	err = a.store.DeactivateCombinedGroup(r.Context(), id)
+	if err != nil {
+		render.Render(w, r, ErrInternalServer(err))
+		return
+	}
+
+	// Return success with no content
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, map[string]interface{}{
+		"success": true,
+		"message": "Combined group deactivated successfully",
+	})
 }
