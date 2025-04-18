@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -33,6 +34,7 @@ type UserStore interface {
 type StudentStore interface {
 	GetStudentByCustomUserID(ctx context.Context, customUserID int64) (*models.Student, error)
 	UpdateStudentLocation(ctx context.Context, id int64, locations map[string]bool) error
+	ListStudents(ctx context.Context, filters map[string]interface{}) ([]models.Student, error)
 }
 
 // NewAPI configures and returns RFID API.
@@ -64,6 +66,11 @@ func (a *API) Router() *chi.Mux {
 
 	// Student tracking with RFID
 	r.Post("/track-student", a.handleStudentTracking)
+
+	// Room occupancy tracking
+	r.Post("/room-entry", a.handleRoomEntry)
+	r.Post("/room-exit", a.handleRoomExit)
+	r.Get("/room-occupancy", a.handleGetRoomOccupancy)
 
 	// Endpoints for Tauri App
 	r.Post("/app/sync", a.handleTauriSync)
@@ -103,21 +110,94 @@ func (a *API) handleGetAllTags(w http.ResponseWriter, r *http.Request) {
 
 // handleTauriSync processes synchronization requests from the Tauri app
 func (a *API) handleTauriSync(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	// Get the logger - our improved GetLogEntry will handle all the edge cases
+	logger := logging.GetLogEntry(r)
+
+	// Create an entry from the logger - it's always safe to do this
+	log := logrus.NewEntry(logrus.StandardLogger())
+	if fieldLogger, ok := logger.(*logrus.Entry); ok {
+		log = fieldLogger
+	} else if logger != nil {
+		// If it's not nil but not a *logrus.Entry, create a new entry that copies the fields
+		log = logrus.NewEntry(logrus.StandardLogger()).WithFields(logrus.Fields{
+			"request_id": middleware.GetReqID(ctx),
+			"method":     r.Method,
+			"path":       r.URL.Path,
+		})
+	}
+
+	// Parse request data
 	data := &TauriSyncRequest{}
 	if err := render.Bind(r, data); err != nil {
+		log.WithError(err).Error("Failed to parse Tauri sync request")
 		render.Render(w, r, ErrInvalidRequest(err))
 		return
 	}
 
-	err := a.store.SaveTauriTags(r.Context(), data.DeviceID, data.Data)
+	log.WithFields(logrus.Fields{
+		"device_id":  data.DeviceID,
+		"tags_count": len(data.Data),
+	}).Info("Processing Tauri sync request")
+
+	// Save the tags from the Tauri app
+	err := a.store.SaveTauriTags(ctx, data.DeviceID, data.Data)
 	if err != nil {
+		log.WithError(err).Error("Failed to save tags from Tauri app")
 		render.Render(w, r, ErrInternalServer(err))
 		return
 	}
 
+	// Process student tracking for all tags
+	processedCount := 0
+	if a.userStore != nil && a.studentStore != nil {
+		for _, tag := range data.Data {
+			// Try to find the user by tag ID
+			user, err := a.userStore.GetCustomUserByTagID(ctx, tag.TagID)
+			if err != nil {
+				log.WithFields(logrus.Fields{
+					"tag_id": tag.TagID,
+					"error":  err.Error(),
+				}).Debug("No user found for tag")
+				continue
+			}
+
+			// Get student information
+			student, err := a.studentStore.GetStudentByCustomUserID(ctx, user.ID)
+			if err != nil {
+				log.WithFields(logrus.Fields{
+					"user_id": user.ID,
+					"error":   err.Error(),
+				}).Debug("User found but no student record")
+				continue
+			}
+
+			// Update student location based on reader type
+			// This is a simplified version - in a real implementation, you would
+			// determine the location type based on the reader information
+			locationUpdates := make(map[string]bool)
+			locationUpdates["in_house"] = true // Default for Tauri app is in-house
+
+			err = a.studentStore.UpdateStudentLocation(ctx, student.ID, locationUpdates)
+			if err != nil {
+				log.WithError(err).Error("Failed to update student location")
+				continue
+			}
+
+			processedCount++
+			log.WithFields(logrus.Fields{
+				"tag_id":     tag.TagID,
+				"student_id": student.ID,
+				"user_name":  user.FirstName + " " + user.SecondName,
+			}).Info("Student location tracked via Tauri sync")
+		}
+	}
+
+	// Return success response
 	response := &TauriSyncResponse{
 		Success: true,
-		Message: fmt.Sprintf("Successfully synced %d tags", len(data.Data)),
+		Message: fmt.Sprintf("Successfully synced %d tags, processed %d student locations",
+			len(data.Data), processedCount),
 	}
 
 	render.JSON(w, r, response)
@@ -125,18 +205,83 @@ func (a *API) handleTauriSync(w http.ResponseWriter, r *http.Request) {
 
 // handleTauriStatus returns status information to the Tauri app
 func (a *API) handleTauriStatus(w http.ResponseWriter, r *http.Request) {
-	tagCount, err := a.store.GetTagStats(r.Context())
+	ctx := r.Context()
+	// Get the logger
+	logger := logging.GetLogEntry(r)
+
+	// Create a logger entry
+	log := logrus.NewEntry(logrus.StandardLogger())
+	if fieldLogger, ok := logger.(*logrus.Entry); ok {
+		log = fieldLogger
+	} else if logger != nil {
+		log = logrus.NewEntry(logrus.StandardLogger()).WithFields(logrus.Fields{
+			"request_id": middleware.GetReqID(ctx),
+			"method":     r.Method,
+			"path":       r.URL.Path,
+		})
+	}
+
+	log.Info("Processing Tauri app status request")
+
+	// Get tag statistics
+	tagCount, err := a.store.GetTagStats(ctx)
 	if err != nil {
+		log.WithError(err).Error("Failed to get tag statistics")
 		render.Render(w, r, ErrInternalServer(err))
 		return
 	}
 
+	// Get additional statistics - we can extend this as needed
+	stats := AppStats{
+		TagCount: tagCount,
+	}
+
+	// Add additional student statistics if studentStore is available
+	if a.studentStore != nil {
+		// For example: find how many students are currently in-house
+		// This would require adding a CountStudentsByLocation method to the StudentStore
+		// For now, we're just providing a placeholder
+		stats.StudentsInHouse = 0
+		stats.StudentsInWC = 0
+		stats.StudentsInSchoolYard = 0
+
+		// Try to get student locations from a filter-based query
+		filters := map[string]interface{}{
+			"in_house": true,
+		}
+
+		studentsInHouse, err := a.studentStore.ListStudents(ctx, filters)
+		if err == nil {
+			stats.StudentsInHouse = len(studentsInHouse)
+		}
+
+		// WC students
+		filters = map[string]interface{}{
+			"wc": true,
+		}
+
+		studentsInWC, err := a.studentStore.ListStudents(ctx, filters)
+		if err == nil {
+			stats.StudentsInWC = len(studentsInWC)
+		}
+
+		// Schoolyard students
+		filters = map[string]interface{}{
+			"school_yard": true,
+		}
+
+		studentsInSchoolYard, err := a.studentStore.ListStudents(ctx, filters)
+		if err == nil {
+			stats.StudentsInSchoolYard = len(studentsInSchoolYard)
+		}
+	}
+
+	// Create status response
 	status := &AppStatus{
 		Status:    "ok",
 		Timestamp: time.Now(),
-		Stats: AppStats{
-			TagCount: tagCount,
-		},
+		Stats:     stats,
+		Version:   "1.0.0", // You might want to get this from your app configuration
 	}
 
 	render.JSON(w, r, status)
@@ -161,6 +306,302 @@ type StudentTrackingResponse struct {
 	StudentID int64  `json:"student_id,omitempty"`
 	Name      string `json:"name,omitempty"`
 	Location  string `json:"location,omitempty"`
+}
+
+// handleRoomEntry processes a student entering a room with an RFID tag
+func (a *API) handleRoomEntry(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	// Get the logger
+	logger := logging.GetLogEntry(r)
+
+	// Create a logger entry
+	log := logrus.NewEntry(logrus.StandardLogger())
+	if fieldLogger, ok := logger.(*logrus.Entry); ok {
+		log = fieldLogger
+	} else if logger != nil {
+		log = logrus.NewEntry(logrus.StandardLogger()).WithFields(logrus.Fields{
+			"request_id": middleware.GetReqID(ctx),
+			"method":     r.Method,
+			"path":       r.URL.Path,
+		})
+	}
+
+	// Parse the request
+	data := &RoomEntryRequest{}
+	if err := render.Bind(r, data); err != nil {
+		log.WithError(err).Error("Failed to parse room entry request")
+		render.Render(w, r, ErrInvalidRequest(err))
+		return
+	}
+
+	log.WithFields(logrus.Fields{
+		"tag_id":    data.TagID,
+		"room_id":   data.RoomID,
+		"reader_id": data.ReaderID,
+	}).Info("Processing room entry request")
+
+	// First log the tag read
+	_, err := a.store.SaveTag(ctx, data.TagID, data.ReaderID)
+	if err != nil {
+		log.WithError(err).Error("Failed to save tag read")
+		// Continue anyway, as this is just for logging
+	}
+
+	// Make sure we have the required stores
+	if a.userStore == nil {
+		render.Render(w, r, ErrInternalServer(fmt.Errorf("user store not configured")))
+		return
+	}
+
+	// Find the user by tag ID
+	user, err := a.userStore.GetCustomUserByTagID(ctx, data.TagID)
+	if err != nil {
+		log.WithFields(logrus.Fields{
+			"tag_id": data.TagID,
+			"error":  err.Error(),
+		}).Info("Tag scanned but no user found")
+
+		render.JSON(w, r, &OccupancyResponse{
+			Success: false,
+			Message: "No user found with this tag ID",
+		})
+		return
+	}
+
+	// Get the student associated with this user
+	if a.studentStore == nil {
+		render.Render(w, r, ErrInternalServer(fmt.Errorf("student store not configured")))
+		return
+	}
+
+	student, err := a.studentStore.GetStudentByCustomUserID(ctx, user.ID)
+	if err != nil {
+		log.WithFields(logrus.Fields{
+			"user_id": user.ID,
+			"error":   err.Error(),
+		}).Info("User found but no student record")
+
+		render.JSON(w, r, &OccupancyResponse{
+			Success: false,
+			Message: "User found but no student record",
+		})
+		return
+	}
+
+	// Record the room entry
+	err = a.store.RecordRoomEntry(ctx, student.ID, data.RoomID)
+	if err != nil {
+		log.WithError(err).Error("Failed to record room entry")
+		render.Render(w, r, ErrInternalServer(err))
+		return
+	}
+
+	// Update student location to in_house
+	locationUpdates := map[string]bool{
+		"in_house":    true,
+		"wc":          false,
+		"school_yard": false,
+	}
+
+	err = a.studentStore.UpdateStudentLocation(ctx, student.ID, locationUpdates)
+	if err != nil {
+		log.WithError(err).Warning("Failed to update student location, but room entry was recorded")
+	}
+
+	// Get the updated room occupancy
+	occupancy, err := a.store.GetRoomOccupancy(ctx, data.RoomID)
+	studentCount := 0
+	if err == nil {
+		studentCount = occupancy.StudentCount
+	}
+
+	// Return success response
+	response := &OccupancyResponse{
+		Success:      true,
+		Message:      "Student entered room successfully",
+		StudentID:    student.ID,
+		RoomID:       data.RoomID,
+		StudentCount: studentCount,
+	}
+
+	log.WithFields(logrus.Fields{
+		"student_id":    student.ID,
+		"room_id":       data.RoomID,
+		"student_count": studentCount,
+	}).Info("Student entered room")
+
+	render.JSON(w, r, response)
+}
+
+// handleRoomExit processes a student exiting a room with an RFID tag
+func (a *API) handleRoomExit(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	// Get the logger
+	logger := logging.GetLogEntry(r)
+
+	// Create a logger entry
+	log := logrus.NewEntry(logrus.StandardLogger())
+	if fieldLogger, ok := logger.(*logrus.Entry); ok {
+		log = fieldLogger
+	} else if logger != nil {
+		log = logrus.NewEntry(logrus.StandardLogger()).WithFields(logrus.Fields{
+			"request_id": middleware.GetReqID(ctx),
+			"method":     r.Method,
+			"path":       r.URL.Path,
+		})
+	}
+
+	// Parse the request
+	data := &RoomExitRequest{}
+	if err := render.Bind(r, data); err != nil {
+		log.WithError(err).Error("Failed to parse room exit request")
+		render.Render(w, r, ErrInvalidRequest(err))
+		return
+	}
+
+	log.WithFields(logrus.Fields{
+		"tag_id":    data.TagID,
+		"room_id":   data.RoomID,
+		"reader_id": data.ReaderID,
+	}).Info("Processing room exit request")
+
+	// First log the tag read
+	_, err := a.store.SaveTag(ctx, data.TagID, data.ReaderID)
+	if err != nil {
+		log.WithError(err).Error("Failed to save tag read")
+		// Continue anyway, as this is just for logging
+	}
+
+	// Make sure we have the required stores
+	if a.userStore == nil {
+		render.Render(w, r, ErrInternalServer(fmt.Errorf("user store not configured")))
+		return
+	}
+
+	// Find the user by tag ID
+	user, err := a.userStore.GetCustomUserByTagID(ctx, data.TagID)
+	if err != nil {
+		log.WithFields(logrus.Fields{
+			"tag_id": data.TagID,
+			"error":  err.Error(),
+		}).Info("Tag scanned but no user found")
+
+		render.JSON(w, r, &OccupancyResponse{
+			Success: false,
+			Message: "No user found with this tag ID",
+		})
+		return
+	}
+
+	// Get the student associated with this user
+	if a.studentStore == nil {
+		render.Render(w, r, ErrInternalServer(fmt.Errorf("student store not configured")))
+		return
+	}
+
+	student, err := a.studentStore.GetStudentByCustomUserID(ctx, user.ID)
+	if err != nil {
+		log.WithFields(logrus.Fields{
+			"user_id": user.ID,
+			"error":   err.Error(),
+		}).Info("User found but no student record")
+
+		render.JSON(w, r, &OccupancyResponse{
+			Success: false,
+			Message: "User found but no student record",
+		})
+		return
+	}
+
+	// Record the room exit
+	err = a.store.RecordRoomExit(ctx, student.ID, data.RoomID)
+	if err != nil {
+		log.WithError(err).Error("Failed to record room exit")
+		render.Render(w, r, ErrInternalServer(err))
+		return
+	}
+
+	// Get the updated room occupancy
+	occupancy, err := a.store.GetRoomOccupancy(ctx, data.RoomID)
+	studentCount := 0
+	if err == nil {
+		studentCount = occupancy.StudentCount
+	}
+
+	// Return success response
+	response := &OccupancyResponse{
+		Success:      true,
+		Message:      "Student exited room successfully",
+		StudentID:    student.ID,
+		RoomID:       data.RoomID,
+		StudentCount: studentCount,
+	}
+
+	log.WithFields(logrus.Fields{
+		"student_id":    student.ID,
+		"room_id":       data.RoomID,
+		"student_count": studentCount,
+	}).Info("Student exited room")
+
+	render.JSON(w, r, response)
+}
+
+// handleGetRoomOccupancy returns the current occupancy for a room
+func (a *API) handleGetRoomOccupancy(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	// Get the logger
+	logger := logging.GetLogEntry(r)
+
+	// Create a logger entry
+	log := logrus.NewEntry(logrus.StandardLogger())
+	if fieldLogger, ok := logger.(*logrus.Entry); ok {
+		log = fieldLogger
+	} else if logger != nil {
+		log = logrus.NewEntry(logrus.StandardLogger()).WithFields(logrus.Fields{
+			"request_id": middleware.GetReqID(ctx),
+			"method":     r.Method,
+			"path":       r.URL.Path,
+		})
+	}
+
+	// Get the room ID from the query parameter
+	roomIDStr := r.URL.Query().Get("room_id")
+	var roomID int64 = 0
+	var err error
+
+	if roomIDStr != "" {
+		roomID, err = strconv.ParseInt(roomIDStr, 10, 64)
+		if err != nil {
+			log.WithError(err).Error("Invalid room ID")
+			render.Render(w, r, ErrInvalidRequest(fmt.Errorf("invalid room ID: %s", roomIDStr)))
+			return
+		}
+	}
+
+	log.WithField("room_id", roomID).Info("Getting room occupancy")
+
+	// If no room ID is provided, return all rooms
+	if roomID == 0 {
+		rooms, err := a.store.GetCurrentRooms(ctx)
+		if err != nil {
+			log.WithError(err).Error("Failed to get room occupancy")
+			render.Render(w, r, ErrInternalServer(err))
+			return
+		}
+
+		render.JSON(w, r, rooms)
+		return
+	}
+
+	// Get occupancy for the specified room
+	occupancy, err := a.store.GetRoomOccupancy(ctx, roomID)
+	if err != nil {
+		log.WithError(err).Error("Failed to get room occupancy")
+		render.Render(w, r, ErrInternalServer(err))
+		return
+	}
+
+	render.JSON(w, r, occupancy)
 }
 
 // handleStudentTracking processes RFID tags for student tracking

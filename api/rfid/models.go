@@ -36,8 +36,8 @@ type TauriSyncRequest struct {
 
 // SyncTag represents a tag record from the Tauri app
 type SyncTag struct {
-	TagID      string    `json:"tag_id"`
-	ReaderID   string    `json:"reader_id"`
+	TagID       string    `json:"tag_id"`
+	ReaderID    string    `json:"reader_id"`
 	LocalReadAt time.Time `json:"local_read_at"`
 }
 
@@ -55,7 +55,10 @@ type TauriSyncResponse struct {
 
 // AppStats contains statistics for the Tauri app
 type AppStats struct {
-	TagCount int `json:"tag_count"`
+	TagCount             int `json:"tag_count"`
+	StudentsInHouse      int `json:"students_in_house"`
+	StudentsInWC         int `json:"students_in_wc"`
+	StudentsInSchoolYard int `json:"students_in_school_yard"`
 }
 
 // AppStatus represents the server status for the Tauri app
@@ -63,4 +66,54 @@ type AppStatus struct {
 	Status    string    `json:"status"`
 	Timestamp time.Time `json:"timestamp"`
 	Stats     AppStats  `json:"stats"`
+	Version   string    `json:"version"`
+}
+
+// RoomEntryRequest represents a student entering a room with an RFID tag
+type RoomEntryRequest struct {
+	TagID    string `json:"tag_id"`
+	RoomID   int64  `json:"room_id"`
+	ReaderID string `json:"reader_id"`
+}
+
+// Bind preprocesses a RoomEntryRequest
+func (req *RoomEntryRequest) Bind(r *http.Request) error {
+	return nil
+}
+
+// RoomExitRequest represents a student exiting a room with an RFID tag
+type RoomExitRequest struct {
+	TagID    string `json:"tag_id"`
+	RoomID   int64  `json:"room_id"`
+	ReaderID string `json:"reader_id"`
+}
+
+// Bind preprocesses a RoomExitRequest
+func (req *RoomExitRequest) Bind(r *http.Request) error {
+	return nil
+}
+
+// OccupancyResponse represents a response for room occupancy operations
+type OccupancyResponse struct {
+	Success      bool   `json:"success"`
+	Message      string `json:"message"`
+	StudentID    int64  `json:"student_id,omitempty"`
+	RoomID       int64  `json:"room_id,omitempty"`
+	StudentCount int    `json:"student_count,omitempty"`
+}
+
+// RoomOccupancyStudent represents a student in a room for occupancy reporting
+type RoomOccupancyStudent struct {
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	EnteredAt time.Time `json:"entered_at"`
+}
+
+// RoomOccupancyData represents the occupancy data for a room
+type RoomOccupancyData struct {
+	RoomID       int64                  `json:"room_id"`
+	RoomName     string                 `json:"room_name"`
+	Capacity     int                    `json:"capacity"`
+	StudentCount int                    `json:"student_count"`
+	Students     []RoomOccupancyStudent `json:"students"`
 }
