@@ -1,6 +1,6 @@
-# github.com/dhax/go-base
+# github.com/dhax/go-base MOTO Server
 
-GoBase REST API.
+MOTO REST API for RFID-based system.
 
 ## Routes
 
@@ -9,13 +9,12 @@ GoBase REST API.
 
 - [Recoverer](/vendor/github.com/go-chi/chi/middleware/recoverer.go#L18)
 - [RequestID](/vendor/github.com/go-chi/chi/middleware/request_id.go#L63)
-- [DefaultCompress](/vendor/github.com/go-chi/chi/middleware/compress.go#L38)
-- [Timeout.func1](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
-- [RequestLogger.func1](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
-- [SetContentType.func1](/vendor/github.com/go-chi/render/content_type.go#L49)
-- **/***
+- [Timeout](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
+- [Logger](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
+- [SetContentType](/vendor/github.com/go-chi/render/content_type.go#L49)
+- **/**
 	- _GET_
-		- [SPAHandler.func1](/api/api.go#L101)
+		- [SPAHandler](/api/api.go#L101)
 
 </details>
 <details>
@@ -23,15 +22,14 @@ GoBase REST API.
 
 - [Recoverer](/vendor/github.com/go-chi/chi/middleware/recoverer.go#L18)
 - [RequestID](/vendor/github.com/go-chi/chi/middleware/request_id.go#L63)
-- [DefaultCompress](/vendor/github.com/go-chi/chi/middleware/compress.go#L38)
-- [Timeout.func1](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
-- [RequestLogger.func1](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
-- [SetContentType.func1](/vendor/github.com/go-chi/render/content_type.go#L49)
-- **/admin/***
-	- [RequiresRole.func1](/auth/authorizer.go#L11)
+- [Timeout](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
+- [Logger](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
+- [SetContentType](/vendor/github.com/go-chi/render/content_type.go#L49)
+- **/admin/**
+	- [RequiresRole](/auth/authorizer.go#L11)
 	- **/**
 		- _GET_
-			- [(*API).Router.func1](/api/admin/api.go#L42)
+			- Admin dashboard root
 
 </details>
 <details>
@@ -39,18 +37,17 @@ GoBase REST API.
 
 - [Recoverer](/vendor/github.com/go-chi/chi/middleware/recoverer.go#L18)
 - [RequestID](/vendor/github.com/go-chi/chi/middleware/request_id.go#L63)
-- [DefaultCompress](/vendor/github.com/go-chi/chi/middleware/compress.go#L38)
-- [Timeout.func1](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
-- [RequestLogger.func1](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
-- [SetContentType.func1](/vendor/github.com/go-chi/render/content_type.go#L49)
-- **/admin/***
-	- [RequiresRole.func1](/auth/authorizer.go#L11)
-	- **/accounts/***
+- [Timeout](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
+- [Logger](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
+- [SetContentType](/vendor/github.com/go-chi/render/content_type.go#L49)
+- **/admin/**
+	- [RequiresRole](/auth/authorizer.go#L11)
+	- **/accounts/**
 		- **/**
 			- _GET_
-				- [(*AccountResource).(github.com/dhax/go-base/api/admin.list)-fm](/api/admin/accounts.go#L50)
+				- List all accounts
 			- _POST_
-				- [(*AccountResource).(github.com/dhax/go-base/api/admin.create)-fm](/api/admin/accounts.go#L51)
+				- Create a new account
 
 </details>
 <details>
@@ -58,22 +55,20 @@ GoBase REST API.
 
 - [Recoverer](/vendor/github.com/go-chi/chi/middleware/recoverer.go#L18)
 - [RequestID](/vendor/github.com/go-chi/chi/middleware/request_id.go#L63)
-- [DefaultCompress](/vendor/github.com/go-chi/chi/middleware/compress.go#L38)
-- [Timeout.func1](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
-- [RequestLogger.func1](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
-- [SetContentType.func1](/vendor/github.com/go-chi/render/content_type.go#L49)
-- **/admin/***
-	- [RequiresRole.func1](/auth/authorizer.go#L11)
-	- **/accounts/***
-		- **/{accountID}/***
-			- [(*AccountResource).(github.com/dhax/go-base/api/admin.accountCtx)-fm](/api/admin/accounts.go#L53)
+- [Timeout](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
+- [Logger](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
+- [SetContentType](/vendor/github.com/go-chi/render/content_type.go#L49)
+- **/admin/**
+	- [RequiresRole](/auth/authorizer.go#L11)
+	- **/accounts/**
+		- **/{accountID}/**
 			- **/**
 				- _PUT_
-					- [(*AccountResource).(github.com/dhax/go-base/api/admin.update)-fm](/api/admin/accounts.go#L55)
+					- Update account
 				- _DELETE_
-					- [(*AccountResource).(github.com/dhax/go-base/api/admin.delete)-fm](/api/admin/accounts.go#L56)
+					- Delete account
 				- _GET_
-					- [(*AccountResource).(github.com/dhax/go-base/api/admin.get)-fm](/api/admin/accounts.go#L54)
+					- Get account details
 
 </details>
 <details>
@@ -81,140 +76,75 @@ GoBase REST API.
 
 - [Recoverer](/vendor/github.com/go-chi/chi/middleware/recoverer.go#L18)
 - [RequestID](/vendor/github.com/go-chi/chi/middleware/request_id.go#L63)
-- [DefaultCompress](/vendor/github.com/go-chi/chi/middleware/compress.go#L38)
-- [Timeout.func1](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
-- [RequestLogger.func1](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
-- [SetContentType.func1](/vendor/github.com/go-chi/render/content_type.go#L49)
-- **/api/***
-	- **/account/***
-		- [(*AccountResource).(github.com/dhax/go-base/api/app.accountCtx)-fm](/api/app/account.go#L48)
+- [Timeout](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
+- [Logger](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
+- [SetContentType](/vendor/github.com/go-chi/render/content_type.go#L49)
+- **/api/**
+	- **/account/**
 		- **/**
 			- _PUT_
-				- [(*AccountResource).(github.com/dhax/go-base/api/app.update)-fm](/api/app/account.go#L50)
+				- Update own account
 			- _DELETE_
-				- [(*AccountResource).(github.com/dhax/go-base/api/app.delete)-fm](/api/app/account.go#L51)
+				- Delete own account
 			- _GET_
-				- [(*AccountResource).(github.com/dhax/go-base/api/app.get)-fm](/api/app/account.go#L49)
+				- Get own account details
 
 </details>
 <details>
-<summary>`/api/*/account/*/profile`</summary>
+<summary>`/auth/*`</summary>
 
 - [Recoverer](/vendor/github.com/go-chi/chi/middleware/recoverer.go#L18)
 - [RequestID](/vendor/github.com/go-chi/chi/middleware/request_id.go#L63)
-- [DefaultCompress](/vendor/github.com/go-chi/chi/middleware/compress.go#L38)
-- [Timeout.func1](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
-- [RequestLogger.func1](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
-- [SetContentType.func1](/vendor/github.com/go-chi/render/content_type.go#L49)
-- **/api/***
-	- **/account/***
-		- [(*AccountResource).(github.com/dhax/go-base/api/app.accountCtx)-fm](/api/app/account.go#L48)
-		- **/profile**
-			- _PUT_
-				- [(*AccountResource).(github.com/dhax/go-base/api/app.updateProfile)-fm](/api/app/account.go#L56)
-
-</details>
-<details>
-<summary>`/api/*/account/*/token/{tokenID}/*`</summary>
-
-- [Recoverer](/vendor/github.com/go-chi/chi/middleware/recoverer.go#L18)
-- [RequestID](/vendor/github.com/go-chi/chi/middleware/request_id.go#L63)
-- [DefaultCompress](/vendor/github.com/go-chi/chi/middleware/compress.go#L38)
-- [Timeout.func1](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
-- [RequestLogger.func1](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
-- [SetContentType.func1](/vendor/github.com/go-chi/render/content_type.go#L49)
-- **/api/***
-	- **/account/***
-		- [(*AccountResource).(github.com/dhax/go-base/api/app.accountCtx)-fm](/api/app/account.go#L48)
-		- **/token/{tokenID}/***
-			- **/**
-				- _PUT_
-					- [(*AccountResource).(github.com/dhax/go-base/api/app.updateToken)-fm](/api/app/account.go#L53)
-				- _DELETE_
-					- [(*AccountResource).(github.com/dhax/go-base/api/app.deleteToken)-fm](/api/app/account.go#L54)
-
-</details>
-<details>
-<summary>`/auth/*/login`</summary>
-
-- [Recoverer](/vendor/github.com/go-chi/chi/middleware/recoverer.go#L18)
-- [RequestID](/vendor/github.com/go-chi/chi/middleware/request_id.go#L63)
-- [DefaultCompress](/vendor/github.com/go-chi/chi/middleware/compress.go#L38)
-- [Timeout.func1](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
-- [RequestLogger.func1](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
-- [SetContentType.func1](/vendor/github.com/go-chi/render/content_type.go#L49)
-- **/auth/***
-	- [SetContentType.func1](/vendor/github.com/go-chi/render/content_type.go#L49)
+- [Timeout](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
+- [Logger](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
+- [SetContentType](/vendor/github.com/go-chi/render/content_type.go#L49)
+- **/auth/**
 	- **/login**
 		- _POST_
-			- [(*Resource).(github.com/dhax/go-base/auth.login)-fm](/auth/api.go#L67)
-
-</details>
-<details>
-<summary>`/auth/*/logout`</summary>
-
-- [Recoverer](/vendor/github.com/go-chi/chi/middleware/recoverer.go#L18)
-- [RequestID](/vendor/github.com/go-chi/chi/middleware/request_id.go#L63)
-- [DefaultCompress](/vendor/github.com/go-chi/chi/middleware/compress.go#L38)
-- [Timeout.func1](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
-- [RequestLogger.func1](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
-- [SetContentType.func1](/vendor/github.com/go-chi/render/content_type.go#L49)
-- **/auth/***
-	- [SetContentType.func1](/vendor/github.com/go-chi/render/content_type.go#L49)
-	- **/logout**
-		- _POST_
-			- [Verifier.func1](/vendor/github.com/go-chi/jwtauth/jwtauth.go#L70)
-			- [AuthenticateRefreshJWT](/auth/authenticator.go#L66)
-			- [(*Resource).(github.com/dhax/go-base/auth.logout)-fm](/auth/api.go#L73)
-
-</details>
-<details>
-<summary>`/auth/*/refresh`</summary>
-
-- [Recoverer](/vendor/github.com/go-chi/chi/middleware/recoverer.go#L18)
-- [RequestID](/vendor/github.com/go-chi/chi/middleware/request_id.go#L63)
-- [DefaultCompress](/vendor/github.com/go-chi/chi/middleware/compress.go#L38)
-- [Timeout.func1](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
-- [RequestLogger.func1](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
-- [SetContentType.func1](/vendor/github.com/go-chi/render/content_type.go#L49)
-- **/auth/***
-	- [SetContentType.func1](/vendor/github.com/go-chi/render/content_type.go#L49)
-	- **/refresh**
-		- _POST_
-			- [Verifier.func1](/vendor/github.com/go-chi/jwtauth/jwtauth.go#L70)
-			- [AuthenticateRefreshJWT](/auth/authenticator.go#L66)
-			- [(*Resource).(github.com/dhax/go-base/auth.refresh)-fm](/auth/api.go#L72)
-
-</details>
-<details>
-<summary>`/auth/*/token`</summary>
-
-- [Recoverer](/vendor/github.com/go-chi/chi/middleware/recoverer.go#L18)
-- [RequestID](/vendor/github.com/go-chi/chi/middleware/request_id.go#L63)
-- [DefaultCompress](/vendor/github.com/go-chi/chi/middleware/compress.go#L38)
-- [Timeout.func1](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
-- [RequestLogger.func1](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
-- [SetContentType.func1](/vendor/github.com/go-chi/render/content_type.go#L49)
-- **/auth/***
-	- [SetContentType.func1](/vendor/github.com/go-chi/render/content_type.go#L49)
+			- Request a login token (passwordless auth)
 	- **/token**
 		- _POST_
-			- [(*Resource).(github.com/dhax/go-base/auth.token)-fm](/auth/api.go#L68)
+			- Exchange login token for JWT access token
+	- **/refresh**
+		- _POST_
+			- Refresh JWT token
+	- **/logout**
+		- _POST_
+			- Invalidate JWT token
 
 </details>
 <details>
-<summary>`/ping`</summary>
+<summary>`/rfid/*`</summary>
 
 - [Recoverer](/vendor/github.com/go-chi/chi/middleware/recoverer.go#L18)
 - [RequestID](/vendor/github.com/go-chi/chi/middleware/request_id.go#L63)
-- [DefaultCompress](/vendor/github.com/go-chi/chi/middleware/compress.go#L38)
-- [Timeout.func1](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
-- [RequestLogger.func1](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
-- [SetContentType.func1](/vendor/github.com/go-chi/render/content_type.go#L49)
-- **/ping**
-	- _GET_
-		- [NewAPI.func2](/api/api.go#L73)
+- [Timeout](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
+- [Logger](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
+- [SetContentType](/vendor/github.com/go-chi/render/content_type.go#L49)
+- **/rfid/**
+	- **/tag**
+		- _POST_
+			- Submit RFID tag read from Python daemon
+	- **/tags**
+		- _GET_
+			- Get all stored RFID tags
+	- **/app/sync**
+		- _POST_
+			- Sync tags from Tauri app
+	- **/app/status**
+		- _GET_
+			- Get server status for Tauri app
 
 </details>
+<details>
+<summary>`/healthz`</summary>
 
-Total # of routes: 12
+- [Recoverer](/vendor/github.com/go-chi/chi/middleware/recoverer.go#L18)
+- [RequestID](/vendor/github.com/go-chi/chi/middleware/request_id.go#L63)
+- [Timeout](/vendor/github.com/go-chi/chi/middleware/timeout.go#L33)
+- [Logger](/vendor/github.com/go-chi/chi/middleware/logger.go#L36)
+- [SetContentType](/vendor/github.com/go-chi/render/content_type.go#L49)
+- **/healthz**
+	- _GET_
+		- Health check endpoint
+</details>

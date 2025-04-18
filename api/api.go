@@ -10,6 +10,7 @@ import (
 
 	"github.com/dhax/go-base/api/admin"
 	"github.com/dhax/go-base/api/app"
+	"github.com/dhax/go-base/api/rfid"
 	"github.com/dhax/go-base/auth/jwt"
 	"github.com/dhax/go-base/auth/pwdless"
 	"github.com/dhax/go-base/database"
@@ -56,6 +57,12 @@ func New(enableCORS bool) (*chi.Mux, error) {
 		return nil, err
 	}
 
+	rfidAPI, err := rfid.NewAPI(db)
+	if err != nil {
+		logger.WithField("module", "rfid").Error(err)
+		return nil, err
+	}
+
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
@@ -71,6 +78,10 @@ func New(enableCORS bool) (*chi.Mux, error) {
 	}
 
 	r.Mount("/auth", authResource.Router())
+	
+	// RFID endpoint doesn't require auth
+	r.Mount("/rfid", rfidAPI.Router())
+	
 	r.Group(func(r chi.Router) {
 		r.Use(authResource.TokenAuth.Verifier())
 		r.Use(jwt.Authenticator)
