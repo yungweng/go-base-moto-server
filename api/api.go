@@ -12,6 +12,7 @@ import (
 	"github.com/dhax/go-base/api/app"
 	"github.com/dhax/go-base/api/rfid"
 	"github.com/dhax/go-base/api/room"
+	"github.com/dhax/go-base/api/user"
 	"github.com/dhax/go-base/auth/jwt"
 	"github.com/dhax/go-base/auth/pwdless"
 	"github.com/dhax/go-base/database"
@@ -70,6 +71,9 @@ func New(enableCORS bool) (*chi.Mux, error) {
 		return nil, err
 	}
 
+	userStore := database.NewUserStore(db)
+	userAPI := user.NewResource(userStore, authStore)
+
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
@@ -95,6 +99,7 @@ func New(enableCORS bool) (*chi.Mux, error) {
 		r.Mount("/admin", adminAPI.Router())
 		r.Mount("/api", appAPI.Router())
 		r.Mount("/rooms", roomAPI.Router())
+		r.Mount("/users", userAPI.Router())
 	})
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {

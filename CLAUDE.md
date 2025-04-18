@@ -58,3 +58,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 401 Unauthorized → Check token validity/expiration
 - Address already in use → Find and kill previous server processes
 - Empty response → Check if server output contains error messages
+
+### Key Technical Concepts:
+- Go backend development with REST API endpoints
+- Chi router for API routing
+- Bun ORM for PostgreSQL database operations
+- JWT authentication for securing API endpoints
+- Passwordless email authentication flow
+- Database transactions for ensuring data consistency
+- Database migrations for schema evolution
+- Entity relationships (Room, RoomOccupancy, Timespan)
+- Unit testing for model validation
