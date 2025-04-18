@@ -10,8 +10,10 @@ import (
 
 	"github.com/dhax/go-base/api/admin"
 	"github.com/dhax/go-base/api/app"
+	"github.com/dhax/go-base/api/group"
 	"github.com/dhax/go-base/api/rfid"
 	"github.com/dhax/go-base/api/room"
+	"github.com/dhax/go-base/api/student"
 	"github.com/dhax/go-base/api/user"
 	"github.com/dhax/go-base/auth/jwt"
 	"github.com/dhax/go-base/auth/pwdless"
@@ -74,6 +76,13 @@ func New(enableCORS bool) (*chi.Mux, error) {
 	userStore := database.NewUserStore(db)
 	userAPI := user.NewResource(userStore, authStore)
 
+	// Initialize student and group stores and APIs
+	studentStore := database.NewStudentStore(db)
+	studentAPI := student.NewResource(studentStore, authStore)
+
+	groupStore := database.NewGroupStore(db)
+	groupAPI := group.NewResource(groupStore, authStore)
+
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
@@ -100,6 +109,8 @@ func New(enableCORS bool) (*chi.Mux, error) {
 		r.Mount("/api", appAPI.Router())
 		r.Mount("/rooms", roomAPI.Router())
 		r.Mount("/users", userAPI.Router())
+		r.Mount("/students", studentAPI.Router())
+		r.Mount("/groups", groupAPI.Router())
 	})
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {

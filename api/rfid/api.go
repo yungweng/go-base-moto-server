@@ -14,16 +14,33 @@ import (
 // API provides RFID handlers.
 type API struct {
 	store RFIDStore
+	// Temporarily commented out: userStore UserStore
 }
+
+// Temporarily commented out for compilation
+/*
+type UserStore interface {
+	GetCustomUserByTagID(ctx context.Context, tagID string) (*models.CustomUser, error)
+}
+*/
 
 // NewAPI configures and returns RFID API.
 func NewAPI(db *bun.DB) (*API, error) {
 	store := NewRFIDStore(db)
+	// Note: In production, you'd inject these dependencies
+	// This is simplified for the example - we will set userStore in the API integration file
 	api := &API{
 		store: store,
 	}
 	return api, nil
 }
+
+// Temporarily commented out
+/*
+func (a *API) SetUserStore(userStore UserStore) {
+	a.userStore = userStore
+}
+*/
 
 // Router provides RFID routes.
 func (a *API) Router() *chi.Mux {
@@ -32,6 +49,9 @@ func (a *API) Router() *chi.Mux {
 	// Endpoints for RFID Python Daemon
 	r.Post("/tag", a.handleTagRead)
 	r.Get("/tags", a.handleGetAllTags)
+
+	// Temporarily commented out
+	// r.Post("/track-student", a.handleStudentTracking)
 
 	// Endpoints for Tauri App
 	r.Post("/app/sync", a.handleTauriSync)
@@ -109,3 +129,31 @@ func (a *API) handleTauriStatus(w http.ResponseWriter, r *http.Request) {
 
 	render.JSON(w, r, status)
 }
+
+// StudentTrackingRequest is the request for student tracking with RFID
+type StudentTrackingRequest struct {
+	TagID        string `json:"tag_id"`
+	ReaderID     string `json:"reader_id"`
+	LocationType string `json:"location_type"` // "entry", "wc", "schoolyard", or "exit"
+}
+
+// Bind preprocesses a StudentTrackingRequest
+func (req *StudentTrackingRequest) Bind(r *http.Request) error {
+	return nil
+}
+
+// StudentTrackingResponse is the response for student tracking
+type StudentTrackingResponse struct {
+	Success   bool   `json:"success"`
+	Message   string `json:"message"`
+	StudentID int64  `json:"student_id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Location  string `json:"location,omitempty"`
+}
+
+// Temporarily commented out
+/*
+func (a *API) handleStudentTracking(w http.ResponseWriter, r *http.Request) {
+	// Implementation commented out temporarily
+}
+*/
