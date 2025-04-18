@@ -37,3 +37,8 @@ func checkConn(db *bun.DB) error {
 	var n int
 	return db.NewSelect().ColumnExpr("1").Scan(context.Background(), &n)
 }
+
+// NewSettingsStore returns a new BunSettingsStore
+func NewSettingsStore(db *bun.DB) *BunSettingsStore {
+	return &BunSettingsStore{db: db}
+}

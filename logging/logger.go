@@ -140,3 +140,10 @@ func LogEntrySetFields(r *http.Request, fields map[string]any) {
 		entry.Logger = entry.Logger.WithFields(fields)
 	}
 }
+
+// NewNoopLogger creates a logger that discards all log entries
+func NewNoopLogger() *logrus.Logger {
+	logger := logrus.New()
+	logger.SetOutput(nil) // Discard all logs
+	return logger
+}
