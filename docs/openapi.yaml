@@ -1,0 +1,2033 @@
+openapi: 3.0.3
+info:
+  title: MOTO API
+  description: |
+    API for the MOTO school management system
+    
+    This documentation covers both modern REST API endpoints (ViewSets) and legacy endpoints.
+    Legacy endpoints are marked with "(Legacy)" in their summary and are maintained for backward compatibility.
+    
+    **Note**: For new integrations, prefer using the modern REST API endpoints rather than legacy endpoints.
+  version: 1.0.0
+  contact:
+    name: MOTO Support
+servers:
+  - url: /api
+    description: API Base URL
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  
+  schemas:
+    # User Models
+    CustomUser:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        first_name:
+          type: string
+        second_name:
+          type: string
+        tag_id:
+          type: string
+          nullable: true
+    
+    PedagogicalSpecialist:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        role:
+          type: string
+        custom_user:
+          $ref: '#/components/schemas/CustomUser'
+        user_id:
+          type: integer
+          format: int64
+        is_password_otp:
+          type: boolean
+    
+    # Room Models
+    Room:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        room_name:
+          type: string
+        building:
+          type: string
+        floor:
+          type: integer
+        capacity:
+          type: integer
+        occupied:
+          type: boolean
+        color:
+          type: string
+        category:
+          type: string
+        activity:
+          type: string
+      required:
+        - room_name
+    
+    RoomOccupancy:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        device_id:
+          type: string
+        ag:
+          type: integer
+          nullable: true
+        group:
+          type: integer
+          nullable: true
+        timespan:
+          type: integer
+        supervisor:
+          type: array
+          items:
+            type: integer
+    
+    RoomOccupancyDetail:
+      type: object
+      properties:
+        room:
+          type: object
+          properties:
+            room_name:
+              type: string
+            floor:
+              type: integer
+            capacity:
+              type: integer
+        ag:
+          type: object
+          nullable: true
+          properties:
+            name:
+              type: string
+            category:
+              type: string
+              nullable: true
+            max_participant:
+              type: integer
+        supervisor:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                format: int64
+              first_name:
+                type: string
+              second_name:
+                type: string
+        timespan:
+          type: object
+          properties:
+            starttime:
+              type: string
+              format: time
+            endtime:
+              type: string
+              format: time
+              nullable: true
+    
+    # Time Models
+    Timespan:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        starttime:
+          type: string
+          format: time
+        endtime:
+          type: string
+          format: time
+          nullable: true
+    
+    Datespan:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        startdate:
+          type: string
+          format: date-time
+        enddate:
+          type: string
+          format: date-time
+    
+    # Group Models
+    Group:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        supervisor:
+          type: array
+          items:
+            $ref: '#/components/schemas/PedagogicalSpecialist'
+        room:
+          type: integer
+          format: int64
+        room_name:
+          type: string
+        representative:
+          $ref: '#/components/schemas/PedagogicalSpecialist'
+    
+    CombinedGroup:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/Group'
+        access_specialists:
+          type: array
+          items:
+            $ref: '#/components/schemas/PedagogicalSpecialist'
+        access_policy:
+          type: string
+          enum: [all, first, specific, manual]
+          description: Determines which pedagogical specialists have access to this combined group
+        valid_until:
+          type: string
+          format: date-time
+          nullable: true
+        specific_group:
+          $ref: '#/components/schemas/Group'
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        is_active:
+          type: boolean
+    
+    # AG Models
+    AgCategory:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+    
+    AgTime:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        weekday:
+          type: integer
+        timespan:
+          $ref: '#/components/schemas/Timespan'
+    
+    Ag:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        max_participant:
+          type: integer
+        is_open_ag:
+          type: boolean
+        supervisor:
+          $ref: '#/components/schemas/PedagogicalSpecialist'
+        ag_category:
+          $ref: '#/components/schemas/AgCategory'
+        timeslots:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgTime'
+        datespan:
+          $ref: '#/components/schemas/Datespan'
+    
+    # Student Models
+    Student:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        school_class:
+          type: string
+        bus:
+          type: string
+        name_lg:
+          type: string
+        contact_lg:
+          type: string
+        in_house:
+          type: boolean
+        wc:
+          type: boolean
+        school_yard:
+          type: boolean
+        custom_user:
+          $ref: '#/components/schemas/CustomUser'
+        group:
+          $ref: '#/components/schemas/Group'
+        ag_bookings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ag'
+    
+    StudentList:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        school_class:
+          type: string
+        group_name:
+          type: string
+        in_house:
+          type: boolean
+    
+    # Visit Models
+    Visit:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        day:
+          type: string
+          format: date
+        student:
+          $ref: '#/components/schemas/StudentList'
+        room:
+          $ref: '#/components/schemas/Room'
+        timespan:
+          $ref: '#/components/schemas/Timespan'
+    
+    RoomHistory:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        room:
+          $ref: '#/components/schemas/Room'
+        ag_name:
+          type: string
+        day:
+          type: string
+          format: date
+        timespan:
+          $ref: '#/components/schemas/Timespan'
+        ag_category:
+          $ref: '#/components/schemas/AgCategory'
+        supervisor:
+          $ref: '#/components/schemas/PedagogicalSpecialist'
+        max_participant:
+          type: integer
+    
+    # Feedback Model
+    Feedback:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        feedback_value:
+          type: integer
+        day:
+          type: string
+          format: date
+        time:
+          type: string
+          format: time
+        student:
+          $ref: '#/components/schemas/StudentList'
+        mensa_feedback:
+          type: boolean
+    
+    # Setting Model
+    Setting:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        key:
+          type: string
+        value:
+          type: string
+        category:
+          type: string
+        description:
+          type: string
+        requires_restart:
+          type: boolean
+        requires_db_reset:
+          type: boolean
+    
+    # Auth Models
+    TokenObtainPair:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      required:
+        - username
+        - password
+    
+    TokenResponse:
+      type: object
+      properties:
+        access:
+          type: string
+        refresh:
+          type: string
+        is_otp:
+          type: boolean
+    
+    Error:
+      type: object
+      properties:
+        detail:
+          type: string
+
+security:
+  - bearerAuth: []
+
+paths:
+  # Authentication Endpoints
+  /login/:
+    post:
+      tags:
+        - Authentication
+      summary: Login to obtain JWT token
+      description: |
+        Authenticates a user and returns JWT access and refresh tokens.
+        If user is a pedagogical specialist with OTP enabled, is_otp will be true.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPair'
+      responses:
+        '200':
+          description: Successful authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /token/refresh/:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh JWT token
+      description: |
+        Refreshes an expired JWT access token using a valid refresh token.
+        Returns a new access token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh:
+                  type: string
+                  description: Valid refresh token
+              required:
+                - refresh
+      responses:
+        '200':
+          description: Successfully refreshed token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access:
+                    type: string
+                    description: New access token
+        '401':
+          description: Invalid or expired refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /logout/:
+    post:
+      tags:
+        - Authentication
+      summary: Logout user
+      description: Logs out the current user by blacklisting their refresh token
+      responses:
+        '200':
+          description: Successful logout
+        '401':
+          description: Unauthorized
+  
+  /authenticate/:
+    post:
+      tags:
+        - Authentication
+      summary: Authenticate user
+      description: Verifies if the current token is valid and returns user information
+      responses:
+        '200':
+          description: Authentication valid
+        '401':
+          description: Authentication invalid
+  
+  /change_password/:
+    post:
+      tags:
+        - Authentication
+      summary: Change password
+      description: Changes the password for the current user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                old_password:
+                  type: string
+                new_password:
+                  type: string
+              required:
+                - old_password
+                - new_password
+      responses:
+        '200':
+          description: Password changed successfully
+        '400':
+          description: Invalid request
+  
+  # Room Endpoints
+  /rooms/:
+    get:
+      tags:
+        - Rooms
+      summary: List all rooms
+      description: Returns a list of all rooms, with optional filtering
+      parameters:
+        - name: category
+          in: query
+          description: Filter by room category
+          schema:
+            type: string
+        - name: building
+          in: query
+          description: Filter by building
+          schema:
+            type: string
+        - name: floor
+          in: query
+          description: Filter by floor
+          schema:
+            type: integer
+        - name: occupied
+          in: query
+          description: Filter by occupancy status
+          schema:
+            type: boolean
+        - name: search
+          in: query
+          description: Search term for room name, category, or building
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of rooms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Room'
+        '401':
+          description: Unauthorized - Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /rooms/merge/:
+    post:
+      tags:
+        - Rooms
+      summary: Merge two rooms
+      description: |
+        Merges source room into target room.
+        Students from source room will be transferred to target room.
+        Creates a combined group for the merged rooms.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                source_room_id:
+                  type: integer
+                  description: ID of the source room to merge
+                target_room_id:
+                  type: integer
+                  description: ID of the target room to merge into
+              required:
+                - source_room_id
+                - target_room_id
+      responses:
+        '200':
+          description: Rooms merged successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  combined_group:
+                    $ref: '#/components/schemas/CombinedGroup'
+                  message:
+                    type: string
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /rooms/choose/:
+    get:
+      tags:
+        - Rooms
+      summary: Get rooms for selection
+      description: Returns a list of rooms formatted for room selection UI
+      parameters:
+        - name: device_id
+          in: query
+          description: Device ID for context
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of rooms available for selection
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    room_name:
+                      type: string
+                    category:
+                      type: string
+                    building:
+                      type: string
+                    floor:
+                      type: integer
+                    capacity:
+                      type: integer
+                    color:
+                      type: string
+                    occupied:
+                      type: boolean
+        '401':
+          description: Unauthorized - Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    post:
+      tags:
+        - Rooms
+      summary: Create a new room
+      description: Creates a new room with the provided information
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Room'
+      responses:
+        '201':
+          description: Room created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+        '400':
+          description: Invalid request
+  
+  /rooms/{id}/:
+    get:
+      tags:
+        - Rooms
+      summary: Get room details
+      description: Returns details for a specific room
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Room ID
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Room details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+        '404':
+          description: Room not found
+    
+    put:
+      tags:
+        - Rooms
+      summary: Update a room
+      description: Updates a specific room with new information
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Room ID
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Room'
+      responses:
+        '200':
+          description: Room updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+        '404':
+          description: Room not found
+    
+    delete:
+      tags:
+        - Rooms
+      summary: Delete a room
+      description: Deletes a specific room
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Room ID
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Room deleted
+        '404':
+          description: Room not found
+  
+  /rooms/grouped_by_category/:
+    get:
+      tags:
+        - Rooms
+      summary: Get rooms grouped by category
+      description: Returns rooms grouped by their categories
+      responses:
+        '200':
+          description: Rooms grouped by category
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    category:
+                      type: string
+                    rooms:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/Room'
+  
+  /rooms/{id}/current_occupancy/:
+    get:
+      tags:
+        - Rooms
+      summary: Get current room occupancy
+      description: Returns the current occupancy for a specific room
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Room ID
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Room occupancy details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomOccupancyDetail'
+        '404':
+          description: Room is not currently occupied
+  
+  /rooms/{id}/visits/:
+    get:
+      tags:
+        - Rooms
+      summary: Get room visits
+      description: Returns all student visits for a specific room
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Room ID
+          schema:
+            type: integer
+        - name: date
+          in: query
+          description: Filter by date
+          schema:
+            type: string
+            format: date
+        - name: active
+          in: query
+          description: Filter by active status
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: List of visits
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Visit'
+  
+  /rooms/{id}/register_tablet/:
+    post:
+      tags:
+        - Rooms
+      summary: Register tablet to room
+      description: |
+        Registers a tablet to a specific room.
+        This endpoint creates a Room_occupancy entry that links a tablet (device_id) to a room.
+        Either a group or an AG (activity group) must be specified.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Room ID
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_id:
+                  type: string
+                  description: Unique identifier for the tablet/device
+                supervisors:
+                  type: array
+                  items:
+                    type: integer
+                  description: Array of Pedagogical_specialist IDs who will supervise this room
+                group:
+                  type: integer
+                  nullable: true
+                  description: Group ID if this room is for a specific group
+                ag_id:
+                  type: integer
+                  nullable: true
+                  description: Activity Group ID if this room is for a specific AG
+                ag:
+                  type: object
+                  nullable: true
+                  description: Create a new AG for this room occupancy
+                  properties:
+                    name:
+                      type: string
+                      description: Name of the new AG
+                    max_participant:
+                      type: integer
+                      description: Maximum number of participants allowed
+                    ag_category:
+                      type: integer
+                      description: AG category ID
+                    is_open_ag:
+                      type: boolean
+                      description: Whether this AG is open for registration
+              required:
+                - device_id
+      responses:
+        '201':
+          description: Tablet registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: 
+                    type: integer
+                  device_id:
+                    type: string
+                  ag:
+                    type: integer
+                    nullable: true
+                  group:
+                    type: integer
+                    nullable: true
+                  timespan:
+                    type: integer
+                  supervisor:
+                    type: array
+                    items:
+                      type: integer
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /rooms/{id}/unregister_tablet/:
+    post:
+      tags:
+        - Rooms
+      summary: Unregister tablet from room
+      description: Unregisters a tablet from a specific room
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Room ID
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_id:
+                  type: string
+              required:
+                - device_id
+      responses:
+        '200':
+          description: Tablet unregistered successfully
+        '400':
+          description: Invalid request
+        '404':
+          description: No tablet registered with this device ID in this room
+  
+  # Room Occupancy Endpoints
+  /room-occupancies/:
+    get:
+      tags:
+        - Room Occupancies
+      summary: List all room occupancies
+      description: Returns a list of all current room occupancies
+      responses:
+        '200':
+          description: List of room occupancies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoomOccupancyDetail'
+  
+  /room-occupancies/{id}/:
+    get:
+      tags:
+        - Room Occupancies
+      summary: Get room occupancy details
+      description: Returns details for a specific room occupancy
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Room Occupancy ID
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Room occupancy details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomOccupancyDetail'
+        '404':
+          description: Room occupancy not found
+  
+  # User Management Endpoints
+  /get_user_by_id/{id}/:
+    get:
+      tags:
+        - Users
+      summary: Get user by ID
+      description: Returns details for a specific user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: User ID
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PedagogicalSpecialist'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /get_user_educational_specialist_without_supervision/:
+    get:
+      tags:
+        - Users
+      summary: Get educational specialists without supervision
+      description: Returns a list of educational specialists without assigned supervision duties
+      responses:
+        '200':
+          description: List of educational specialists without supervision
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PedagogicalSpecialist'
+  
+  /get_user_list/:
+    get:
+      tags:
+        - Users
+      summary: Get user list
+      description: Returns a list of all users
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PedagogicalSpecialist'
+  
+  /change_tag_id/:
+    post:
+      tags:
+        - Users
+      summary: Change tag ID
+      description: Changes the RFID tag ID for a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id:
+                  type: integer
+                tag_id:
+                  type: string
+              required:
+                - user_id
+                - tag_id
+      responses:
+        '200':
+          description: Tag ID changed successfully
+        '400':
+          description: Invalid request
+  
+  /process_tag_scan/:
+    post:
+      tags:
+        - Users
+      summary: Process tag scan
+      description: Processes an RFID tag scan event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tag_id:
+                  type: string
+                device_id:
+                  type: string
+              required:
+                - tag_id
+                - device_id
+      responses:
+        '200':
+          description: Tag scan processed successfully
+        '400':
+          description: Invalid request
+  
+  /give_feedback/:
+    post:
+      tags:
+        - Users
+      summary: Give feedback
+      description: Submits user feedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                student_id:
+                  type: integer
+                feedback_value:
+                  type: integer
+                mensa_feedback:
+                  type: boolean
+              required:
+                - student_id
+                - feedback_value
+      responses:
+        '201':
+          description: Feedback submitted successfully
+        '400':
+          description: Invalid request
+  
+  # Student Management Endpoints
+  /students/:
+    get:
+      tags:
+        - Students
+      summary: List all students
+      description: Returns a list of all students
+      parameters:
+        - name: group_id
+          in: query
+          description: Filter students by group ID
+          schema:
+            type: integer
+        - name: search
+          in: query
+          description: Search term for student name
+          schema:
+            type: string
+        - name: in_house
+          in: query
+          description: Filter by in-house status
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: List of students
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Student'
+    
+    post:
+      tags:
+        - Students
+      summary: Create a new student
+      description: Creates a new student with the provided information
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Student'
+      responses:
+        '201':
+          description: Student created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Student'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /students/{id}/:
+    get:
+      tags:
+        - Students
+      summary: Get student details
+      description: Returns details for a specific student
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Student ID
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Student details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Student'
+        '404':
+          description: Student not found
+          
+    put:
+      tags:
+        - Students
+      summary: Update a student
+      description: Updates a specific student with new information
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Student ID
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Student'
+      responses:
+        '200':
+          description: Student updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Student'
+        '400':
+          description: Invalid request
+        '404':
+          description: Student not found
+          
+    patch:
+      tags:
+        - Students
+      summary: Partially update a student
+      description: Partially updates a specific student with new information
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Student ID
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Student'
+      responses:
+        '200':
+          description: Student updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Student'
+        '400':
+          description: Invalid request
+        '404':
+          description: Student not found
+          
+    delete:
+      tags:
+        - Students
+      summary: Delete a student
+      description: Deletes a specific student
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Student ID
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Student deleted
+        '404':
+          description: Student not found
+  
+  # Group Management Endpoints
+  /groups/:
+    get:
+      tags:
+        - Groups
+      summary: List all groups
+      description: Returns a list of all groups
+      parameters:
+        - name: supervisor_id
+          in: query
+          description: Filter groups by supervisor ID
+          schema:
+            type: integer
+        - name: search
+          in: query
+          description: Search term for group name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of groups
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Group'
+                  
+    post:
+      tags:
+        - Groups
+      summary: Create a new group
+      description: Creates a new group with the provided information
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                supervisor_ids:
+                  type: array
+                  items:
+                    type: integer
+                representative_id:
+                  type: integer
+                  nullable: true
+                room_id:
+                  type: integer
+                  nullable: true
+              required:
+                - name
+      responses:
+        '201':
+          description: Group created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+        '400':
+          description: Invalid request
+          
+  /groups/{id}/:
+    get:
+      tags:
+        - Groups
+      summary: Get group details
+      description: Returns details for a specific group
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Group ID
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Group details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+        '404':
+          description: Group not found
+          
+    put:
+      tags:
+        - Groups
+      summary: Update a group
+      description: Updates a specific group with new information
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Group ID
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Group'
+      responses:
+        '200':
+          description: Group updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+        '400':
+          description: Invalid request
+        '404':
+          description: Group not found
+          
+    delete:
+      tags:
+        - Groups
+      summary: Delete a group
+      description: Deletes a specific group
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Group ID
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Group deleted
+        '404':
+          description: Group not found
+  
+  /combined-groups/:
+    get:
+      tags:
+        - Groups
+      summary: List all combined groups
+      description: Returns a list of all combined groups
+      responses:
+        '200':
+          description: List of combined groups
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CombinedGroup'
+  
+  # AG Management Endpoints
+  /ags/:
+    get:
+      tags:
+        - AGs
+      summary: List all AGs
+      description: Returns a list of all activity groups
+      parameters:
+        - name: category_id
+          in: query
+          description: Filter AGs by category ID
+          schema:
+            type: integer
+        - name: supervisor_id
+          in: query
+          description: Filter AGs by supervisor ID
+          schema:
+            type: integer
+        - name: is_open_ag
+          in: query
+          description: Filter by open AG status
+          schema:
+            type: boolean
+        - name: search
+          in: query
+          description: Search term for AG name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of AGs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Ag'
+    
+    post:
+      tags:
+        - AGs
+      summary: Create a new AG
+      description: Creates a new activity group with the provided information
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                max_participant:
+                  type: integer
+                is_open_ag:
+                  type: boolean
+                supervisor_id:
+                  type: integer
+                ag_category_id:
+                  type: integer
+                timeslots:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      weekday:
+                        type: integer
+                      starttime:
+                        type: string
+                        format: time
+                      endtime:
+                        type: string
+                        format: time
+                        nullable: true
+              required:
+                - name
+                - max_participant
+                - supervisor_id
+                - ag_category_id
+      responses:
+        '201':
+          description: AG created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ag'
+        '400':
+          description: Invalid request
+          
+  /ags/{id}/:
+    get:
+      tags:
+        - AGs
+      summary: Get AG details
+      description: Returns details for a specific activity group
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: AG ID
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: AG details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ag'
+        '404':
+          description: AG not found
+          
+    put:
+      tags:
+        - AGs
+      summary: Update an AG
+      description: Updates a specific activity group with new information
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: AG ID
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Ag'
+      responses:
+        '200':
+          description: AG updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ag'
+        '400':
+          description: Invalid request
+        '404':
+          description: AG not found
+          
+    delete:
+      tags:
+        - AGs
+      summary: Delete an AG
+      description: Deletes a specific activity group
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: AG ID
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: AG deleted
+        '404':
+          description: AG not found
+  
+  /ag-categories/:
+    get:
+      tags:
+        - AGs
+      summary: List all AG categories
+      description: Returns a list of all activity group categories
+      responses:
+        '200':
+          description: List of AG categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AgCategory'
+  
+  # Visit Management Endpoints
+  /visits/:
+    get:
+      tags:
+        - Visits
+      summary: List all visits
+      description: Returns a list of all student visits
+      responses:
+        '200':
+          description: List of visits
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Visit'
+  
+  /room-history/:
+    get:
+      tags:
+        - Visits
+      summary: Get room history
+      description: Returns history of room usage
+      responses:
+        '200':
+          description: Room history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoomHistory'
+  
+  # Settings Endpoints
+  /settings/:
+    get:
+      tags:
+        - Settings
+      summary: List all settings
+      description: Returns a list of all system settings
+      responses:
+        '200':
+          description: List of settings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Setting'
+  
+  # Legacy endpoints that are still in use
+  /get_room_list/:
+    get:
+      tags:
+        - Rooms
+      summary: Get room list (Legacy)
+      description: |
+        Returns a list of all rooms (Legacy endpoint).
+        **Deprecated**: Use the `/rooms/` endpoint instead.
+      responses:
+        '200':
+          description: List of rooms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Room'
+  
+  /register_tablet_to_room/:
+    post:
+      tags:
+        - Rooms
+      summary: Register tablet to room (Legacy)
+      description: |
+        Registers a tablet to a room (Legacy endpoint).
+        **Deprecated**: Use the `/rooms/{id}/register_tablet/` endpoint instead.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                room_id:
+                  type: integer
+                  description: ID of the room to register the tablet to
+                device_id:
+                  type: string
+                  description: Unique identifier for the tablet/device
+                supervisor_ids:
+                  type: array
+                  items:
+                    type: integer
+                  description: Array of supervisor IDs
+                supervisor_id:
+                  type: integer
+                  description: Single supervisor ID for backward compatibility
+                group_id:
+                  type: integer
+                  nullable: true
+                  description: Group ID if this room is for a specific group
+                ag_id:
+                  type: integer
+                  nullable: true
+                  description: Activity Group ID if this room is for a specific AG
+              required:
+                - room_id
+                - device_id
+      responses:
+        '200':
+          description: Tablet registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Room or other resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /unregister_tablet_from_room/:
+    post:
+      tags:
+        - Rooms
+      summary: Unregister tablet from room (Legacy)
+      description: Unregisters a tablet from a room (Legacy endpoint)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_id:
+                  type: string
+              required:
+                - device_id
+      responses:
+        '200':
+          description: Tablet unregistered successfully
+        '400':
+          description: Invalid request
+  
+  /register_student_in_room/:
+    post:
+      tags:
+        - Rooms
+      summary: Register student in room (Legacy)
+      description: Registers a student in a room (Legacy endpoint)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                student_id:
+                  type: integer
+                device_id:
+                  type: string
+              required:
+                - student_id
+                - device_id
+      responses:
+        '200':
+          description: Student registered successfully
+        '400':
+          description: Invalid request
+  
+  /unregister_student_from_room/:
+    post:
+      tags:
+        - Rooms
+      summary: Unregister student from room (Legacy)
+      description: Unregisters a student from a room (Legacy endpoint)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                student_id:
+                  type: integer
+                device_id:
+                  type: string
+              required:
+                - student_id
+                - device_id
+      responses:
+        '200':
+          description: Student unregistered successfully
+        '400':
+          description: Invalid request
+  
+  /update_room/:
+    post:
+      tags:
+        - Rooms
+      summary: Update room occupancy (Legacy)
+      description: Updates room occupancy information (Legacy endpoint)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_id:
+                  type: string
+              required:
+                - device_id
+      responses:
+        '200':
+          description: Room occupancy updated successfully
+        '400':
+          description: Invalid request
+          
+  /merge_rooms/:
+    post:
+      tags:
+        - Rooms
+      summary: Merge two rooms (Legacy)
+      description: |
+        Merges source room into target room.
+        Students from source room will be transferred to target room.
+        If both rooms are group rooms, creates a combined group instead.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                source_room_id:
+                  type: integer
+                  description: ID of the source room to merge
+                target_room_id:
+                  type: integer
+                  description: ID of the target room to merge into
+              required:
+                - source_room_id
+                - target_room_id
+      responses:
+        '200':
+          description: Rooms merged successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  combined_group:
+                    $ref: '#/components/schemas/CombinedGroup'
+                  transferred_students:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /get_active_room_information/:
+    get:
+      tags:
+        - Rooms
+      summary: Get active room information (Legacy)
+      description: Returns information about active rooms (Legacy endpoint)
+      parameters:
+        - name: device_id
+          in: query
+          description: Device ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Active room information
+        '404':
+          description: No active room found
+
+  # Public endpoints
+  /public/users/:
+    get:
+      tags:
+        - Public
+      summary: Get public user list
+      description: |
+        Returns a list of users for public access.
+        This endpoint does not require authentication.
+      security: []
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    first_name:
+                      type: string
+                    second_name:
+                      type: string
+                    tag_id:
+                      type: string
+                      nullable: true
+  
+  /public/supervisors/:
+    get:
+      tags:
+        - Public
+      summary: Get public supervisors list
+      description: |
+        Returns a list of supervisors for public access.
+        This endpoint does not require authentication.
+      security: []
+      responses:
+        '200':
+          description: List of supervisors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    role:
+                      type: string
+                    user_id:
+                      type: integer
+                    first_name:
+                      type: string
+                    second_name:
+                      type: string
