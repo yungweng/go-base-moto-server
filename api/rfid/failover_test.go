@@ -48,8 +48,8 @@ func TestUnknownTagID(t *testing.T) {
 
 	mockUserStore.On("GetCustomUserByTagID", mock.Anything, unknownTagID).Return(nil, errors.New("user not found"))
 
-	// Create a router and test server
-	router := api.Router()
+	// Create a router and test server with mock authentication
+	router := setupTestRouter(api)
 	server := httptest.NewServer(router)
 	defer server.Close()
 
@@ -164,8 +164,8 @@ func TestDatabaseFailureWhenSavingTag(t *testing.T) {
 	}
 	mockRFIDStore.On("GetRoomOccupancy", mock.Anything, roomID).Return(mockOccupancy, nil)
 
-	// Create a router and test server
-	router := api.Router()
+	// Create a router and test server with mock authentication
+	router := setupTestRouter(api)
 	server := httptest.NewServer(router)
 	defer server.Close()
 
@@ -250,8 +250,8 @@ func TestErrorCreatingTimespan(t *testing.T) {
 	timespanErr := errors.New("failed to create timespan")
 	mockTimespanStore.On("CreateTimespan", mock.Anything, mock.AnythingOfType("time.Time"), mock.Anything).Return(nil, timespanErr)
 
-	// Create a router and test server
-	router := api.Router()
+	// Create a router and test server with mock authentication
+	router := setupTestRouter(api)
 	server := httptest.NewServer(router)
 	defer server.Close()
 
@@ -371,8 +371,8 @@ func TestErrorUpdatingStudentLocation(t *testing.T) {
 	}
 	mockRFIDStore.On("GetRoomOccupancy", mock.Anything, roomID).Return(mockOccupancy, nil)
 
-	// Create a router and test server
-	router := api.Router()
+	// Create a router and test server with mock authentication
+	router := setupTestRouter(api)
 	server := httptest.NewServer(router)
 	defer server.Close()
 
@@ -411,8 +411,8 @@ func TestMalformedRequest(t *testing.T) {
 		store: mockRFIDStore,
 	}
 
-	// Create a router and test server
-	router := api.Router()
+	// Create a router and test server with mock authentication
+	router := setupTestRouter(api)
 	server := httptest.NewServer(router)
 	defer server.Close()
 
@@ -468,8 +468,8 @@ func TestUserFoundButNoStudentRecord(t *testing.T) {
 	mockUserStore.On("GetCustomUserByTagID", mock.Anything, tagID).Return(user, nil)
 	mockStudentStore.On("GetStudentByCustomUserID", mock.Anything, user.ID).Return(nil, errors.New("student not found"))
 
-	// Create a router and test server
-	router := api.Router()
+	// Create a router and test server with mock authentication
+	router := setupTestRouter(api)
 	server := httptest.NewServer(router)
 	defer server.Close()
 

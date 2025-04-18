@@ -21,6 +21,13 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: |
+        API key for device authentication. Provide the API key as a Bearer token in the Authorization header.
+        Example: Authorization: Bearer YOUR_API_KEY
   
   schemas:
     # User Models
@@ -1971,6 +1978,904 @@ paths:
           description: Active room information
         '404':
           description: No active room found
+
+  # RFID API Endpoints
+  /rfid/tag:
+    post:
+      tags:
+        - RFID
+      summary: Record RFID tag read
+      description: |
+        Records a tag read from an RFID reader. Used by RFID readers to submit tag data to the system.
+        This endpoint requires API key authentication.
+      security:
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tag_id:
+                  type: string
+                  description: The unique ID of the RFID tag
+                reader_id:
+                  type: string
+                  description: The unique ID of the RFID reader that scanned the tag
+              required:
+                - tag_id
+                - reader_id
+      responses:
+        '201':
+          description: Tag read recorded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    format: int64
+                  tag_id:
+                    type: string
+                  reader_id:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+        '401':
+          description: Unauthorized - Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /rfid/tags:
+    get:
+      tags:
+        - RFID
+      summary: Get all recorded RFID tags
+      description: Returns a list of all RFID tag reads recorded in the system.
+      security:
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: List of tag reads
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      format: int64
+                    tag_id:
+                      type: string
+                    reader_id:
+                      type: string
+                    created_at:
+                      type: string
+                      format: date-time
+        '401':
+          description: Unauthorized - Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /rfid/track-student:
+    post:
+      tags:
+        - RFID
+      summary: Track student location
+      description: |
+        Updates student location based on RFID tag scans from different reader types.
+        Used for tracking student movement between locations (entry, bathroom, schoolyard, exit).
+      security:
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tag_id:
+                  type: string
+                  description: The unique ID of the RFID tag
+                reader_id:
+                  type: string
+                  description: The unique ID of the RFID reader that scanned the tag
+                location_type:
+                  type: string
+                  description: Type of location update (entry, wc, schoolyard, exit)
+                  enum: [entry, wc, schoolyard, exit]
+              required:
+                - tag_id
+                - reader_id
+                - location_type
+      responses:
+        '200':
+          description: Student tracking successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  student_id:
+                    type: integer
+                    format: int64
+                  name:
+                    type: string
+                  location:
+                    type: string
+        '401':
+          description: Unauthorized - Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /rfid/room-entry:
+    post:
+      tags:
+        - RFID
+      summary: Record student room entry
+      description: Records a student entering a room using their RFID tag.
+      security:
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tag_id:
+                  type: string
+                  description: The unique ID of the RFID tag
+                reader_id:
+                  type: string
+                  description: The unique ID of the RFID reader that scanned the tag
+                room_id:
+                  type: integer
+                  format: int64
+                  description: The ID of the room being entered
+              required:
+                - tag_id
+                - reader_id
+                - room_id
+      responses:
+        '200':
+          description: Room entry recorded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  student_id:
+                    type: integer
+                    format: int64
+                  room_id:
+                    type: integer
+                    format: int64
+                  student_count:
+                    type: integer
+                    description: Number of students currently in the room
+        '401':
+          description: Unauthorized - Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /rfid/room-exit:
+    post:
+      tags:
+        - RFID
+      summary: Record student room exit
+      description: Records a student exiting a room using their RFID tag.
+      security:
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tag_id:
+                  type: string
+                  description: The unique ID of the RFID tag
+                reader_id:
+                  type: string
+                  description: The unique ID of the RFID reader that scanned the tag
+                room_id:
+                  type: integer
+                  format: int64
+                  description: The ID of the room being exited
+              required:
+                - tag_id
+                - reader_id
+                - room_id
+      responses:
+        '200':
+          description: Room exit recorded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  student_id:
+                    type: integer
+                    format: int64
+                  room_id:
+                    type: integer
+                    format: int64
+                  student_count:
+                    type: integer
+                    description: Number of students remaining in the room
+        '401':
+          description: Unauthorized - Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /rfid/room-occupancy:
+    get:
+      tags:
+        - RFID
+      summary: Get room occupancy
+      description: Returns the current occupancy for a room or all rooms.
+      security:
+        - apiKeyAuth: []
+      parameters:
+        - name: room_id
+          in: query
+          description: Optional room ID to get occupancy for a specific room
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Room occupancy information
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      room_id:
+                        type: integer
+                        format: int64
+                      room_name:
+                        type: string
+                      student_count:
+                        type: integer
+                      students:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            student_id:
+                              type: integer
+                              format: int64
+                            name:
+                              type: string
+                  - type: array
+                    items:
+                      type: object
+                      properties:
+                        room_id:
+                          type: integer
+                          format: int64
+                        room_name:
+                          type: string
+                        student_count:
+                          type: integer
+        '401':
+          description: Unauthorized - Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /rfid/student/{id}/visits:
+    get:
+      tags:
+        - RFID
+      summary: Get student visits
+      description: Returns visit records for a specific student, optionally filtered by date.
+      security:
+        - apiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Student ID
+          schema:
+            type: integer
+            format: int64
+        - name: date
+          in: query
+          description: Optional date filter (format YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Student visit records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Visit'
+        '401':
+          description: Unauthorized - Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /rfid/room/{id}/visits:
+    get:
+      tags:
+        - RFID
+      summary: Get room visits
+      description: Returns visit records for a specific room, optionally filtered by date and active status.
+      security:
+        - apiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Room ID
+          schema:
+            type: integer
+            format: int64
+        - name: date
+          in: query
+          description: Optional date filter (format YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+        - name: active
+          in: query
+          description: Filter for active visits only
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Room visit records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Visit'
+        '401':
+          description: Unauthorized - Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /rfid/visits/today:
+    get:
+      tags:
+        - RFID
+      summary: Get today's visits
+      description: Returns all visit records for the current day.
+      security:
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: Today's visit records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Visit'
+        '401':
+          description: Unauthorized - Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /rfid/app/sync:
+    post:
+      tags:
+        - RFID
+      summary: Sync Tauri app data
+      description: |
+        Synchronizes RFID tag data from a Tauri desktop application.
+        Requires authentication with a valid API key in the Authorization header (Bearer token).
+      security:
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_id:
+                  type: string
+                  description: Unique identifier for the Tauri app device
+                app_version:
+                  type: string
+                  description: Version of the Tauri app
+                data:
+                  type: array
+                  description: Array of tag records to synchronize
+                  items:
+                    type: object
+                    properties:
+                      tag_id:
+                        type: string
+                      reader_id:
+                        type: string
+                      timestamp:
+                        type: string
+                        format: date-time
+              required:
+                - device_id
+                - data
+      responses:
+        '200':
+          description: Sync successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '401':
+          description: Unauthorized - Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /rfid/app/status:
+    get:
+      tags:
+        - RFID
+      summary: Get Tauri app system status
+      description: |
+        Returns system status information for Tauri desktop applications.
+        Can be called without authentication, but provides more detail with a valid API key.
+      parameters:
+        - name: api_key
+          in: query
+          description: Optional API key for authenticated status checks
+          schema:
+            type: string
+      responses:
+        '200':
+          description: System status information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok, warning, error]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  version:
+                    type: string
+                  stats:
+                    type: object
+                    properties:
+                      tag_count:
+                        type: integer
+                      students_in_house:
+                        type: integer
+                      students_in_wc:
+                        type: integer
+                      students_in_school_yard:
+                        type: integer
+  
+  /rfid/devices:
+    get:
+      tags:
+        - RFID
+      summary: List all Tauri devices
+      description: Returns a list of all registered Tauri devices.
+      security:
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: List of devices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      format: int64
+                    device_id:
+                      type: string
+                    name:
+                      type: string
+                    description:
+                      type: string
+                    last_sync_at:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    last_ip:
+                      type: string
+                    status:
+                      type: string
+                      enum: [active, inactive, blocked]
+                    created_at:
+                      type: string
+                      format: date-time
+                    updated_at:
+                      type: string
+                      format: date-time
+        '401':
+          description: Unauthorized - Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    post:
+      tags:
+        - RFID
+      summary: Register a new Tauri device
+      description: |
+        Registers a new Tauri desktop application device and generates an API key.
+        The API key is only returned once during registration.
+      security:
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_id:
+                  type: string
+                  description: Unique identifier for the device
+                name:
+                  type: string
+                  description: Human-readable name for the device
+                description:
+                  type: string
+                  description: Optional description of the device
+              required:
+                - device_id
+                - name
+      responses:
+        '201':
+          description: Device registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  device:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                        format: int64
+                      device_id:
+                        type: string
+                      name:
+                        type: string
+                      description:
+                        type: string
+                      status:
+                        type: string
+                        enum: [active, inactive, blocked]
+                      created_at:
+                        type: string
+                        format: date-time
+                      updated_at:
+                        type: string
+                        format: date-time
+                  api_key:
+                    type: string
+                    description: API key for device authentication (only returned once)
+                  device_id:
+                    type: string
+        '401':
+          description: Unauthorized - Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /rfid/devices/{device_id}:
+    get:
+      tags:
+        - RFID
+      summary: Get Tauri device details
+      description: Returns detailed information about a specific Tauri device.
+      security:
+        - apiKeyAuth: []
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          description: Device ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Device details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    format: int64
+                  device_id:
+                    type: string
+                  name:
+                    type: string
+                  description:
+                    type: string
+                  last_sync_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  last_ip:
+                    type: string
+                  status:
+                    type: string
+                    enum: [active, inactive, blocked]
+                  created_at:
+                    type: string
+                    format: date-time
+                  updated_at:
+                    type: string
+                    format: date-time
+        '401':
+          description: Unauthorized - Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Device not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    put:
+      tags:
+        - RFID
+      summary: Update Tauri device
+      description: Updates information for a specific Tauri device.
+      security:
+        - apiKeyAuth: []
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          description: Device ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Human-readable name for the device
+                description:
+                  type: string
+                  description: Description of the device
+                status:
+                  type: string
+                  description: Device status
+                  enum: [active, inactive, blocked]
+      responses:
+        '200':
+          description: Device updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    format: int64
+                  device_id:
+                    type: string
+                  name:
+                    type: string
+                  description:
+                    type: string
+                  last_sync_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  last_ip:
+                    type: string
+                  status:
+                    type: string
+                    enum: [active, inactive, blocked]
+                  created_at:
+                    type: string
+                    format: date-time
+                  updated_at:
+                    type: string
+                    format: date-time
+        '401':
+          description: Unauthorized - Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Device not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /rfid/devices/{device_id}/sync-history:
+    get:
+      tags:
+        - RFID
+      summary: Get device sync history
+      description: Returns synchronization history for a specific Tauri device.
+      security:
+        - apiKeyAuth: []
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          description: Device ID
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum number of records to return (default 50)
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Device sync history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      format: int64
+                    device_id:
+                      type: string
+                    ip_address:
+                      type: string
+                    app_version:
+                      type: string
+                    tags_count:
+                      type: integer
+                    created_at:
+                      type: string
+                      format: date-time
+        '401':
+          description: Unauthorized - Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Device not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   # Public endpoints
   /public/users/:

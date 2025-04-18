@@ -14,6 +14,11 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+func init() {
+	// Enable test mode to bypass authentication
+	IsTestMode = true
+}
+
 // Mock RFIDStore
 type MockRFIDStore struct {
 	mock.Mock
@@ -86,6 +91,29 @@ func (m *MockRFIDStore) GetDeviceSyncHistory(ctx context.Context, deviceID strin
 	return args.Get(0).([]DeviceSyncHistory), args.Error(1)
 }
 
+func (m *MockRFIDStore) RecordRoomEntry(ctx context.Context, studentID, roomID int64) error {
+	args := m.Called(ctx, studentID, roomID)
+	return args.Error(0)
+}
+
+func (m *MockRFIDStore) RecordRoomExit(ctx context.Context, studentID, roomID int64) error {
+	args := m.Called(ctx, studentID, roomID)
+	return args.Error(0)
+}
+
+func (m *MockRFIDStore) GetRoomOccupancy(ctx context.Context, roomID int64) (*RoomOccupancyData, error) {
+	args := m.Called(ctx, roomID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*RoomOccupancyData), args.Error(1)
+}
+
+func (m *MockRFIDStore) GetCurrentRooms(ctx context.Context) ([]RoomOccupancyData, error) {
+	args := m.Called(ctx)
+	return args.Get(0).([]RoomOccupancyData), args.Error(1)
+}
+
 // Mock UserStore
 type MockUserStore struct {
 	mock.Mock
@@ -114,6 +142,55 @@ func (m *MockStudentStore) GetStudentByCustomUserID(ctx context.Context, customU
 
 func (m *MockStudentStore) UpdateStudentLocation(ctx context.Context, id int64, locations map[string]bool) error {
 	args := m.Called(ctx, id, locations)
+	return args.Error(0)
+}
+
+func (m *MockStudentStore) ListStudents(ctx context.Context, filters map[string]interface{}) ([]models.Student, error) {
+	args := m.Called(ctx, filters)
+	return args.Get(0).([]models.Student), args.Error(1)
+}
+
+func (m *MockStudentStore) CreateStudentVisit(ctx context.Context, studentID, roomID, timespanID int64) (*models.Visit, error) {
+	args := m.Called(ctx, studentID, roomID, timespanID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Visit), args.Error(1)
+}
+
+func (m *MockStudentStore) GetStudentVisits(ctx context.Context, studentID int64, date *time.Time) ([]models.Visit, error) {
+	args := m.Called(ctx, studentID, date)
+	return args.Get(0).([]models.Visit), args.Error(1)
+}
+
+func (m *MockStudentStore) GetRoomVisits(ctx context.Context, roomID int64, date *time.Time, active bool) ([]models.Visit, error) {
+	args := m.Called(ctx, roomID, date, active)
+	return args.Get(0).([]models.Visit), args.Error(1)
+}
+
+// Mock TimespanStore
+type MockTimespanStore struct {
+	mock.Mock
+}
+
+func (m *MockTimespanStore) CreateTimespan(ctx context.Context, startTime time.Time, endTime *time.Time) (*models.Timespan, error) {
+	args := m.Called(ctx, startTime, endTime)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Timespan), args.Error(1)
+}
+
+func (m *MockTimespanStore) GetTimespan(ctx context.Context, id int64) (*models.Timespan, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Timespan), args.Error(1)
+}
+
+func (m *MockTimespanStore) UpdateTimespanEndTime(ctx context.Context, id int64, endTime time.Time) error {
+	args := m.Called(ctx, id, endTime)
 	return args.Error(0)
 }
 

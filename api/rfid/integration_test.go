@@ -3,7 +3,6 @@ package rfid
 import (
 	"bytes"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -30,8 +29,8 @@ func TestRFIDIntegrationFlow(t *testing.T) {
 		timespanStore: mockTimespanStore,
 	}
 
-	// Create test server
-	router := api.Router()
+	// Create test server with mock authentication
+	router := setupTestRouter(api)
 	server := httptest.NewServer(router)
 	defer server.Close()
 
@@ -326,21 +325,6 @@ func TestRFIDIntegrationFlow(t *testing.T) {
 	mockTimespanStore.AssertExpectations(t)
 }
 
-// Helper function to perform HTTP requests
-func performRequest(t *testing.T, server *httptest.Server, method, path string, body io.Reader) *http.Response {
-	req, err := http.NewRequest(method, server.URL+path, body)
-	require.NoError(t, err)
-
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-
-	return resp
-}
-
 // Helper function to create a pointer to a time.Time
 func ptTime(t time.Time) *time.Time {
 	return &t
@@ -361,8 +345,8 @@ func TestMultipleStudentsAndRooms(t *testing.T) {
 		timespanStore: mockTimespanStore,
 	}
 
-	// Create test server
-	router := api.Router()
+	// Create test server with mock authentication
+	router := setupTestRouter(api)
 	server := httptest.NewServer(router)
 	defer server.Close()
 

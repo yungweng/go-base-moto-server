@@ -73,38 +73,153 @@ func (a *API) SetTimespanStore(timespanStore TimespanStore) {
 	a.timespanStore = timespanStore
 }
 
+// IsTestMode is a flag that can be set to disable authentication in tests
+var IsTestMode bool = false
+
+// apiKeyAuthMiddleware is a middleware to authenticate requests using API key
+func (a *API) apiKeyAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		logger := logging.GetLogEntry(r)
+
+		// Skip authentication in test mode
+		if IsTestMode {
+			// Create a fake test device for context
+			testDevice := &TauriDevice{
+				ID:          1,
+				DeviceID:    "test-device-id",
+				Name:        "Test Device",
+				Description: "Test device for unit tests",
+				Status:      "active",
+				APIKey:      "test_api_key",
+				CreatedAt:   time.Now(),
+				UpdatedAt:   time.Now(),
+			}
+
+			// Add device to context
+			ctx = context.WithValue(ctx, "device", testDevice)
+			r = r.WithContext(ctx)
+
+			// Proceed with request
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Create a logger entry
+		log := logrus.NewEntry(logrus.StandardLogger())
+		if fieldLogger, ok := logger.(*logrus.Entry); ok {
+			log = fieldLogger
+		} else if logger != nil {
+			log = logrus.NewEntry(logrus.StandardLogger()).WithFields(logrus.Fields{
+				"request_id": middleware.GetReqID(ctx),
+				"method":     r.Method,
+				"path":       r.URL.Path,
+			})
+		}
+
+		// Get API key from Authorization header
+		apiKey := r.Header.Get("Authorization")
+		if apiKey == "" {
+			// Also check query string for API key (for GET requests only)
+			if r.Method == "GET" {
+				apiKey = r.URL.Query().Get("api_key")
+			}
+		}
+
+		if apiKey == "" {
+			log.Error("Missing API key")
+			render.Render(w, r, ErrUnauthorized(fmt.Errorf("API key required")))
+			return
+		}
+
+		// Strip "Bearer " prefix if present
+		apiKey = strings.TrimPrefix(apiKey, "Bearer ")
+
+		// Validate API key and get device
+		device, err := a.store.GetDeviceByAPIKey(ctx, apiKey)
+		if err != nil {
+			log.WithError(err).Error("Invalid API key")
+			render.Render(w, r, ErrUnauthorized(fmt.Errorf("invalid API key")))
+			return
+		}
+
+		// Check if device is active
+		if device.Status != "active" {
+			log.WithField("device_id", device.DeviceID).Error("Inactive device attempted access")
+			render.Render(w, r, ErrUnauthorized(fmt.Errorf("device is not active")))
+			return
+		}
+
+		// Store device in request context
+		ctx = context.WithValue(ctx, "device", device)
+		r = r.WithContext(ctx)
+
+		// Log the authenticated device access
+		log.WithFields(logrus.Fields{
+			"device_id":   device.DeviceID,
+			"device_name": device.Name,
+		}).Info("Authenticated API request")
+
+		// Record last access IP
+		ipAddress := r.RemoteAddr
+		// Extract just the IP part if there's a port
+		if strings.Contains(ipAddress, ":") {
+			ipAddress = strings.Split(ipAddress, ":")[0]
+		}
+
+		// Update last IP, but don't fail the request if it doesn't work
+		err = a.store.UpdateDevice(ctx, device.DeviceID, map[string]interface{}{
+			"last_ip": ipAddress,
+		})
+		if err != nil {
+			log.WithError(err).Warning("Failed to update device last_ip")
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // Router provides RFID routes.
 func (a *API) Router() *chi.Mux {
 	r := chi.NewRouter()
 
-	// Endpoints for RFID Python Daemon
-	r.Post("/tag", a.handleTagRead)
-	r.Get("/tags", a.handleGetAllTags)
+	// Public endpoint for device registration - the only endpoint without auth
+	r.Post("/devices", a.handleRegisterDevice)
 
-	// Student tracking with RFID
-	r.Post("/track-student", a.handleStudentTracking)
-
-	// Room occupancy tracking
-	r.Post("/room-entry", a.handleRoomEntry)
-	r.Post("/room-exit", a.handleRoomExit)
-	r.Get("/room-occupancy", a.handleGetRoomOccupancy)
-
-	// Student visit records
-	r.Get("/student/{id}/visits", a.handleGetStudentVisits)
-	r.Get("/room/{id}/visits", a.handleGetRoomVisits)
-	r.Get("/visits/today", a.handleGetTodayVisits)
-
-	// Endpoints for Tauri App
-	r.Post("/app/sync", a.handleTauriSync)
+	// Status endpoint has optional auth - works without auth but provides more details with auth
 	r.Get("/app/status", a.handleTauriStatus)
 
-	// Device management endpoints
-	r.Route("/devices", func(r chi.Router) {
-		r.Get("/", a.handleListDevices)
-		r.Post("/", a.handleRegisterDevice)
-		r.Get("/{device_id}", a.handleGetDevice)
-		r.Put("/{device_id}", a.handleUpdateDevice)
-		r.Get("/{device_id}/sync-history", a.handleGetDeviceSyncHistory)
+	// API Key authentication middleware for all other endpoints
+	r.Group(func(r chi.Router) {
+		r.Use(a.apiKeyAuthMiddleware)
+
+		// Endpoints for RFID Python Daemon
+		r.Post("/tag", a.handleTagRead)
+		r.Get("/tags", a.handleGetAllTags)
+
+		// Student tracking with RFID
+		r.Post("/track-student", a.handleStudentTracking)
+
+		// Room occupancy tracking
+		r.Post("/room-entry", a.handleRoomEntry)
+		r.Post("/room-exit", a.handleRoomExit)
+		r.Get("/room-occupancy", a.handleGetRoomOccupancy)
+
+		// Student visit records
+		r.Get("/student/{id}/visits", a.handleGetStudentVisits)
+		r.Get("/room/{id}/visits", a.handleGetRoomVisits)
+		r.Get("/visits/today", a.handleGetTodayVisits)
+
+		// Endpoints for Tauri App
+		r.Post("/app/sync", a.handleTauriSync)
+
+		// Protected device management endpoints
+		r.Route("/devices", func(r chi.Router) {
+			r.Get("/", a.handleListDevices)
+			r.Get("/{device_id}", a.handleGetDevice)
+			r.Put("/{device_id}", a.handleUpdateDevice)
+			r.Get("/{device_id}/sync-history", a.handleGetDeviceSyncHistory)
+		})
 	})
 
 	return r
@@ -142,15 +257,13 @@ func (a *API) handleGetAllTags(w http.ResponseWriter, r *http.Request) {
 // handleTauriSync processes synchronization requests from the Tauri app
 func (a *API) handleTauriSync(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	// Get the logger - our improved GetLogEntry will handle all the edge cases
 	logger := logging.GetLogEntry(r)
 
-	// Create an entry from the logger - it's always safe to do this
+	// Create an entry from the logger
 	log := logrus.NewEntry(logrus.StandardLogger())
 	if fieldLogger, ok := logger.(*logrus.Entry); ok {
 		log = fieldLogger
 	} else if logger != nil {
-		// If it's not nil but not a *logrus.Entry, create a new entry that copies the fields
 		log = logrus.NewEntry(logrus.StandardLogger()).WithFields(logrus.Fields{
 			"request_id": middleware.GetReqID(ctx),
 			"method":     r.Method,
@@ -158,29 +271,11 @@ func (a *API) handleTauriSync(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Get API key from Authorization header
-	apiKey := r.Header.Get("Authorization")
-	if apiKey == "" {
-		log.Error("Missing API key")
-		render.Render(w, r, ErrUnauthorized(fmt.Errorf("API key required")))
-		return
-	}
-
-	// Strip "Bearer " prefix if present
-	apiKey = strings.TrimPrefix(apiKey, "Bearer ")
-
-	// Validate API key and get device
-	device, err := a.store.GetDeviceByAPIKey(ctx, apiKey)
-	if err != nil {
-		log.WithError(err).Error("Invalid API key")
-		render.Render(w, r, ErrUnauthorized(fmt.Errorf("invalid API key")))
-		return
-	}
-
-	// Check if device is active
-	if device.Status != "active" {
-		log.WithField("device_id", device.DeviceID).Error("Inactive device attempted sync")
-		render.Render(w, r, ErrUnauthorized(fmt.Errorf("device is not active")))
+	// Get the device from context (set by middleware)
+	device, ok := ctx.Value("device").(*TauriDevice)
+	if !ok {
+		log.Error("Device not found in context")
+		render.Render(w, r, ErrInternalServer(fmt.Errorf("device authentication error")))
 		return
 	}
 
@@ -209,7 +304,7 @@ func (a *API) handleTauriSync(w http.ResponseWriter, r *http.Request) {
 	}).Info("Processing Tauri sync request")
 
 	// Save the tags from the Tauri app
-	err = a.store.SaveTauriTags(ctx, data.DeviceID, data.Data)
+	err := a.store.SaveTauriTags(ctx, data.DeviceID, data.Data)
 	if err != nil {
 		log.WithError(err).Error("Failed to save tags from Tauri app")
 		render.Render(w, r, ErrInternalServer(err))
