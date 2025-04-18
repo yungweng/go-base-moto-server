@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dhax/go-base/api/activity"
 	"github.com/dhax/go-base/api/admin"
 	"github.com/dhax/go-base/api/app"
 	"github.com/dhax/go-base/api/group"
@@ -89,6 +90,9 @@ func New(enableCORS bool) (*chi.Mux, error) {
 
 	groupStore := database.NewGroupStore(db)
 	groupAPI := group.NewResource(groupStore, authStore)
+	
+	agStore := database.NewAgStore(db)
+	activityAPI := activity.NewResource(agStore, authStore)
 
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
@@ -118,6 +122,7 @@ func New(enableCORS bool) (*chi.Mux, error) {
 		r.Mount("/users", userAPI.Router())
 		r.Mount("/students", studentAPI.Router())
 		r.Mount("/groups", groupAPI.Router())
+		r.Mount("/activities", activityAPI.Router())
 	})
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
