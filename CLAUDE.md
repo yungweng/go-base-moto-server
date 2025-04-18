@@ -19,3 +19,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Interfaces: Define before implementation, use mocks for testing
 - Documentation: Godoc style comments for exported functions and types
 - Dependencies: Use Chi router, Cobra CLI, JWT auth, Bun ORM with PostgreSQL
+
+## Development Roadmap
+- Implement Room Management system
+- Build User Management components
+- Develop Time Management models
+- Create Group Management functionality
+- Implement Activity Group (AG) system
+- Build Student Management features
+- Develop Visit Tracking system
+- Add Room Merging/Combined Groups functionality
