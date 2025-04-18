@@ -29,3 +29,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Build Student Management features
 - Develop Visit Tracking system
 - Add Room Merging/Combined Groups functionality
+
+## Project Documentation
+- You can find my documentation of my project in /docs. Please make sure you are implementing as told in the documentation!
+
+## Testing & Debugging Tips
+### Authentication Flow Analysis
+- Before testing, fully trace the auth flow (e.g., passwordless email -> token -> JWT exchange)
+- Check token lifespans in config files - short-lived tokens (minutes) can cause test failures
+
+### Server Process Management
+- ALWAYS properly terminate previous server processes before starting new ones
+- Use lsof -i:PORT to find processes using specific ports
+- Use kill -9 PID to forcefully terminate processes that won't respond to SIGINT
+- Consider running server with output capture: go run main.go serve > server_output.log 2>&1 &
+
+### Token Extraction Techniques
+- Use response parsing when chaining commands: ACCESS_TOKEN=$(curl ... | jq -r '.access_token')
+- For debugging, always verify token content: echo "Using token: ${ACCESS_TOKEN:0:20}..."
+- With passwordless auth, check server logs/output for email-delivered tokens
+
+### Efficient Request Chaining
+- Chain authentication and API requests in single commands with token extraction
+- Add appropriate delays when tokens need time to become active
+- Keep token requests and usage close together to avoid expiration
+
+### Testing Symptoms Checklist
+- 401 Unauthorized → Check token validity/expiration
+- Address already in use → Find and kill previous server processes
+- Empty response → Check if server output contains error messages
