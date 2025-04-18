@@ -98,6 +98,19 @@ func (m *MockStudentStore) CreateFeedback(ctx context.Context, studentID int64, 
 	return args.Get(0).(*models.Feedback), args.Error(1)
 }
 
+func (m *MockStudentStore) GetCombinedGroupVisits(ctx context.Context, combinedGroupID int64, date *time.Time, active bool) ([]models.Visit, error) {
+	args := m.Called(ctx, combinedGroupID, date, active)
+	return args.Get(0).([]models.Visit), args.Error(1)
+}
+
+func (m *MockStudentStore) GetRoomOccupancyByDeviceID(ctx context.Context, deviceID string) (*models.RoomOccupancyDetail, error) {
+	args := m.Called(ctx, deviceID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.RoomOccupancyDetail), args.Error(1)
+}
+
 // Mock AuthTokenStore
 type MockAuthTokenStore struct {
 	mock.Mock

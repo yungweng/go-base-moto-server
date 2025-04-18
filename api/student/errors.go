@@ -43,9 +43,11 @@ func ErrRender(err error) render.Renderer {
 }
 
 // ErrNotFound returns a 404 Not Found response.
-var ErrNotFound = &ErrResponse{
-	HTTPStatusCode: http.StatusNotFound,
-	StatusText:     "Resource not found.",
+func ErrNotFound() render.Renderer {
+	return &ErrResponse{
+		HTTPStatusCode: http.StatusNotFound,
+		StatusText:     "Resource not found.",
+	}
 }
 
 // ErrInternalServerError returns a 500 Internal Server Error response.

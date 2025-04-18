@@ -1,3 +1,4 @@
+// Package student provides the student management API
 package student
 
 import (
@@ -7,13 +8,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/render"
-	"github.com/sirupsen/logrus"
-
 	"github.com/dhax/go-base/auth/jwt"
 	"github.com/dhax/go-base/logging"
 	"github.com/dhax/go-base/models"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/render"
+	"github.com/sirupsen/logrus"
 )
 
 // Resource defines the student management resource
@@ -34,6 +34,7 @@ type StudentStore interface {
 	CreateStudentVisit(ctx context.Context, studentID, roomID, timespanID int64) (*models.Visit, error)
 	GetStudentVisits(ctx context.Context, studentID int64, date *time.Time) ([]models.Visit, error)
 	GetRoomVisits(ctx context.Context, roomID int64, date *time.Time, active bool) ([]models.Visit, error)
+	GetCombinedGroupVisits(ctx context.Context, combinedGroupID int64, date *time.Time, active bool) ([]models.Visit, error)
 	GetStudentAsList(ctx context.Context, id int64) (*models.StudentList, error)
 	CreateFeedback(ctx context.Context, studentID int64, feedbackValue string, mensaFeedback bool) (*models.Feedback, error)
 }
@@ -76,71 +77,17 @@ func (rs *Resource) Router() chi.Router {
 		r.Post("/unregister-from-room", rs.unregisterStudentFromRoom)
 		r.Post("/update-location", rs.updateStudentLocation)
 		r.Post("/give-feedback", rs.giveFeedback)
+
+		// Combined group visits
+		r.Get("/combined-group/{id}/visits", rs.getCombinedGroupVisits)
 	})
 
 	return r
 }
 
-// StudentRequest is the request payload for Student data
-type StudentRequest struct {
-	*models.Student
-}
-
-// Bind preprocesses a StudentRequest
-func (req *StudentRequest) Bind(r *http.Request) error {
-	return nil
-}
-
-// LocationUpdateRequest is the request payload for updating a student's location
-type LocationUpdateRequest struct {
-	StudentID  int64 `json:"student_id"`
-	InHouse    *bool `json:"in_house,omitempty"`
-	WC         *bool `json:"wc,omitempty"`
-	SchoolYard *bool `json:"school_yard,omitempty"`
-}
-
-// Bind preprocesses a LocationUpdateRequest
-func (req *LocationUpdateRequest) Bind(r *http.Request) error {
-	return nil
-}
-
-// RoomRegistrationRequest is the request payload for registering a student in a room
-type RoomRegistrationRequest struct {
-	StudentID int64  `json:"student_id"`
-	DeviceID  string `json:"device_id"`
-}
-
-// Bind preprocesses a RoomRegistrationRequest
-func (req *RoomRegistrationRequest) Bind(r *http.Request) error {
-	return nil
-}
-
-// FeedbackRequest is the request payload for student feedback
-type FeedbackRequest struct {
-	StudentID     int64  `json:"student_id"`
-	FeedbackValue string `json:"feedback_value"`
-	MensaFeedback bool   `json:"mensa_feedback"`
-}
-
-// Bind preprocesses a FeedbackRequest
-func (req *FeedbackRequest) Bind(r *http.Request) error {
-	return nil
-}
-
-// VisitFilter is used to filter visit records
-type VisitFilter struct {
-	Date   *time.Time `json:"date,omitempty"`
-	Active bool       `json:"active,omitempty"`
-}
-
-// Bind preprocesses a VisitFilter
-func (req *VisitFilter) Bind(r *http.Request) error {
-	return nil
-}
-
 // ======== Student Handlers ========
 
-// listStudents returns a list of all students with optional filtering
+// listStudents returns a list of all students
 func (rs *Resource) listStudents(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -186,8 +133,15 @@ func (rs *Resource) createStudent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get the newly created student to include all relations
+	student, err := rs.Store.GetStudentByID(ctx, data.Student.ID)
+	if err != nil {
+		render.Render(w, r, ErrInternalServerError(err))
+		return
+	}
+
 	render.Status(r, http.StatusCreated)
-	render.JSON(w, r, data.Student)
+	render.JSON(w, r, student)
 }
 
 // getStudent returns a specific student
@@ -202,7 +156,7 @@ func (rs *Resource) getStudent(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	student, err := rs.Store.GetStudentByID(ctx, id)
 	if err != nil {
-		render.Render(w, r, ErrNotFound)
+		render.Render(w, r, ErrNotFound())
 		return
 	}
 
@@ -227,18 +181,28 @@ func (rs *Resource) updateStudent(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	student, err := rs.Store.GetStudentByID(ctx, id)
 	if err != nil {
-		render.Render(w, r, ErrNotFound)
+		render.Render(w, r, ErrNotFound())
 		return
 	}
 
-	// Update student fields, preserving what shouldn't be changed
+	// Update student fields except ID, CreatedAt and relationships
 	student.SchoolClass = data.SchoolClass
 	student.Bus = data.Bus
 	student.NameLG = data.NameLG
 	student.ContactLG = data.ContactLG
+	student.InHouse = data.InHouse
+	student.WC = data.WC
+	student.SchoolYard = data.SchoolYard
 	student.GroupID = data.GroupID
 
 	if err := rs.Store.UpdateStudent(ctx, student); err != nil {
+		render.Render(w, r, ErrInternalServerError(err))
+		return
+	}
+
+	// Get the updated student with all relations
+	student, err = rs.Store.GetStudentByID(ctx, id)
+	if err != nil {
 		render.Render(w, r, ErrInternalServerError(err))
 		return
 	}
@@ -266,40 +230,9 @@ func (rs *Resource) deleteStudent(w http.ResponseWriter, r *http.Request) {
 
 // ======== Special Operations ========
 
-// updateStudentLocation updates a student's location flags
-func (rs *Resource) updateStudentLocation(w http.ResponseWriter, r *http.Request) {
-	data := &LocationUpdateRequest{}
-	if err := render.Bind(r, data); err != nil {
-		render.Render(w, r, ErrInvalidRequest(err))
-		return
-	}
-
-	ctx := r.Context()
-
-	// Create a map of location flags to update
-	locations := make(map[string]bool)
-	if data.InHouse != nil {
-		locations["in_house"] = *data.InHouse
-	}
-	if data.WC != nil {
-		locations["wc"] = *data.WC
-	}
-	if data.SchoolYard != nil {
-		locations["school_yard"] = *data.SchoolYard
-	}
-
-	if err := rs.Store.UpdateStudentLocation(ctx, data.StudentID, locations); err != nil {
-		render.Render(w, r, ErrInternalServerError(err))
-		return
-	}
-
-	student, err := rs.Store.GetStudentByID(ctx, data.StudentID)
-	if err != nil {
-		render.Render(w, r, ErrInternalServerError(err))
-		return
-	}
-
-	render.JSON(w, r, student)
+// RoomOccupancyStore defines operations for getting room occupancy by device ID
+type RoomOccupancyStore interface {
+	GetRoomOccupancyByDeviceID(ctx context.Context, deviceID string) (*models.RoomOccupancyDetail, error)
 }
 
 // registerStudentInRoom registers a student in a room
@@ -319,10 +252,30 @@ func (rs *Resource) registerStudentInRoom(w http.ResponseWriter, r *http.Request
 		"device_id":  data.DeviceID,
 	}).Info("Registering student in room")
 
-	// TODO: Get room occupancy for device ID
-	// For now, we'll hardcode some values for demo purposes
-	roomID := int64(1)
-	timespanID := int64(1)
+	// In a production environment, we would:
+	// 1. Lookup the device ID to find the room
+	// 2. Get the roomID and timespanID from the RoomOccupancy
+
+	// For now, we'll use fallback values if the lookup fails
+	roomID := int64(1)     // Default fallback
+	timespanID := int64(1) // Default fallback
+
+	// Try to get the actual room occupancy info if we have a RoomOccupancyStore
+	if roomStore, ok := rs.Store.(RoomOccupancyStore); ok {
+		occupancy, err := roomStore.GetRoomOccupancyByDeviceID(ctx, data.DeviceID)
+		if err == nil && occupancy != nil {
+			// Extract roomID from the detail
+			roomID = occupancy.RoomID
+			timespanID = occupancy.TimespanID
+
+			log.WithFields(logrus.Fields{
+				"room_id":     roomID,
+				"timespan_id": timespanID,
+			}).Info("Found room occupancy for device")
+		} else {
+			log.WithError(err).Warn("Could not find room occupancy for device, using fallback values")
+		}
+	}
 
 	// Create a visit record
 	visit, err := rs.Store.CreateStudentVisit(ctx, data.StudentID, roomID, timespanID)
@@ -398,6 +351,41 @@ func (rs *Resource) getStudentVisits(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, visits)
 }
 
+// getCombinedGroupVisits returns visits for a combined group
+func (rs *Resource) getCombinedGroupVisits(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		render.Render(w, r, ErrInvalidRequest(errors.New("invalid ID format")))
+		return
+	}
+
+	ctx := r.Context()
+
+	// Parse date parameter
+	var date *time.Time
+	if dateStr := r.URL.Query().Get("date"); dateStr != "" {
+		parsedDate, err := time.Parse("2006-01-02", dateStr)
+		if err == nil {
+			date = &parsedDate
+		}
+	}
+
+	// Parse active parameter
+	active := false
+	if activeStr := r.URL.Query().Get("active"); activeStr == "true" {
+		active = true
+	}
+
+	visits, err := rs.Store.GetCombinedGroupVisits(ctx, id, date, active)
+	if err != nil {
+		render.Render(w, r, ErrInternalServerError(err))
+		return
+	}
+
+	render.JSON(w, r, visits)
+}
+
 // giveFeedback records feedback from a student
 func (rs *Resource) giveFeedback(w http.ResponseWriter, r *http.Request) {
 	data := &FeedbackRequest{}
@@ -415,4 +403,88 @@ func (rs *Resource) giveFeedback(w http.ResponseWriter, r *http.Request) {
 
 	render.Status(r, http.StatusCreated)
 	render.JSON(w, r, feedback)
+}
+
+// updateStudentLocation updates a student's location flags
+func (rs *Resource) updateStudentLocation(w http.ResponseWriter, r *http.Request) {
+	data := &LocationUpdateRequest{}
+	if err := render.Bind(r, data); err != nil {
+		render.Render(w, r, ErrInvalidRequest(err))
+		return
+	}
+
+	ctx := r.Context()
+	if err := rs.Store.UpdateStudentLocation(ctx, data.StudentID, data.Locations); err != nil {
+		render.Render(w, r, ErrInternalServerError(err))
+		return
+	}
+
+	// Return success message
+	render.JSON(w, r, map[string]interface{}{
+		"success": true,
+		"message": "Student location updated",
+	})
+}
+
+// StudentRequest represents request payload for student data
+type StudentRequest struct {
+	*models.Student
+}
+
+// Bind preprocesses a StudentRequest
+func (sr *StudentRequest) Bind(r *http.Request) error {
+	// Validation logic can be added here
+	return nil
+}
+
+// FeedbackRequest represents request payload for feedback
+type FeedbackRequest struct {
+	StudentID     int64  `json:"student_id"`
+	FeedbackValue string `json:"feedback_value"`
+	MensaFeedback bool   `json:"mensa_feedback"`
+}
+
+// Bind preprocesses a FeedbackRequest
+func (fr *FeedbackRequest) Bind(r *http.Request) error {
+	if fr.StudentID == 0 {
+		return errors.New("student_id is required")
+	}
+	if fr.FeedbackValue == "" {
+		return errors.New("feedback_value is required")
+	}
+	return nil
+}
+
+// LocationUpdateRequest represents request payload for updating student location
+type LocationUpdateRequest struct {
+	StudentID int64           `json:"student_id"`
+	Locations map[string]bool `json:"locations"`
+}
+
+// Bind preprocesses a LocationUpdateRequest
+func (lu *LocationUpdateRequest) Bind(r *http.Request) error {
+	if lu.StudentID == 0 {
+		return errors.New("student_id is required")
+	}
+	if lu.Locations == nil {
+		return errors.New("locations is required")
+	}
+	return nil
+}
+
+// RoomRegistrationRequest represents request payload for room registration
+type RoomRegistrationRequest struct {
+	StudentID int64  `json:"student_id"`
+	DeviceID  string `json:"device_id"`
+}
+
+// Bind preprocesses a RoomRegistrationRequest
+func (rr *RoomRegistrationRequest) Bind(r *http.Request) error {
+	if rr.StudentID == 0 {
+		return errors.New("student_id is required")
+	}
+	if rr.DeviceID == "" {
+		return errors.New("device_id is required")
+	}
+	return nil
 }

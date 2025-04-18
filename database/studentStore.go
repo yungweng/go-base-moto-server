@@ -190,6 +190,14 @@ func (s *StudentStore) UpdateStudentLocation(ctx context.Context, id int64, loca
 
 // CreateStudentVisit creates a new Visit record for a student
 func (s *StudentStore) CreateStudentVisit(ctx context.Context, studentID, roomID, timespanID int64) (*models.Visit, error) {
+	// Start a transaction
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	// Create the basic visit record
 	visit := &models.Visit{
 		Day:        time.Now(),
 		StudentID:  studentID,
@@ -198,11 +206,46 @@ func (s *StudentStore) CreateStudentVisit(ctx context.Context, studentID, roomID
 		CreatedAt:  time.Now(),
 	}
 
-	_, err := s.db.NewInsert().
+	// Check if the room is part of an active combined group
+	var combinedGroupID int64
+	err = tx.NewSelect().
+		TableExpr("combined_group_groups cgg").
+		Column("cgg.combinedgroup_id").
+		Join("JOIN groups g ON g.id = cgg.group_id").
+		Join("JOIN combined_groups cg ON cg.id = cgg.combinedgroup_id").
+		Where("g.room_id = ? AND cg.is_active = ?", roomID, true).
+		OrderExpr("cgg.id DESC").
+		Limit(1).
+		Scan(ctx, &combinedGroupID)
+
+	// If a combined group was found, add it to the visit
+	if err == nil && combinedGroupID > 0 {
+		// Check if the combined group is not expired
+		var combinedGroup models.CombinedGroup
+		err = tx.NewSelect().
+			Model(&combinedGroup).
+			Where("id = ?", combinedGroupID).
+			Scan(ctx)
+
+		if err == nil {
+			// If the combined group has an expiration and is not expired, or has no expiration
+			now := time.Now()
+			if combinedGroup.ValidUntil == nil || combinedGroup.ValidUntil.After(now) {
+				visit.CombinedGroupID = &combinedGroupID
+			}
+		}
+	}
+
+	// Insert the visit
+	_, err = tx.NewInsert().
 		Model(visit).
 		Exec(ctx)
 
 	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 
@@ -217,6 +260,7 @@ func (s *StudentStore) GetStudentVisits(ctx context.Context, studentID int64, da
 		Model(&visits).
 		Relation("Room").
 		Relation("Timespan").
+		Relation("CombinedGroup").
 		Where("student_id = ?", studentID)
 
 	if date != nil {
@@ -242,6 +286,7 @@ func (s *StudentStore) GetRoomVisits(ctx context.Context, roomID int64, date *ti
 		Relation("Student").
 		Relation("Student.CustomUser").
 		Relation("Timespan").
+		Relation("CombinedGroup").
 		Where("room_id = ?", roomID)
 
 	if date != nil {
@@ -284,6 +329,36 @@ func (s *StudentStore) GetStudentAsList(ctx context.Context, id int64) (*models.
 	return studentList, nil
 }
 
+// GetCombinedGroupVisits retrieves all visits for a combined group
+func (s *StudentStore) GetCombinedGroupVisits(ctx context.Context, combinedGroupID int64, date *time.Time, active bool) ([]models.Visit, error) {
+	var visits []models.Visit
+
+	query := s.db.NewSelect().
+		Model(&visits).
+		Relation("Student").
+		Relation("Student.CustomUser").
+		Relation("Room").
+		Relation("Timespan").
+		Where("combined_group_id = ?", combinedGroupID)
+
+	if date != nil {
+		query = query.Where("DATE(day) = DATE(?)", *date)
+	}
+
+	if active {
+		query = query.Where("timespan.endtime IS NULL")
+	}
+
+	err := query.Order("day DESC").
+		Scan(ctx)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return visits, nil
+}
+
 // CreateFeedback creates a new Feedback record for a student
 func (s *StudentStore) CreateFeedback(ctx context.Context, studentID int64, feedbackValue string, mensaFeedback bool) (*models.Feedback, error) {
 	now := time.Now()
@@ -305,4 +380,30 @@ func (s *StudentStore) CreateFeedback(ctx context.Context, studentID int64, feed
 	}
 
 	return feedback, nil
+}
+
+// GetRoomOccupancyByDeviceID retrieves room occupancy details by device ID
+// This implements the RoomOccupancyStore interface required by the student API
+func (s *StudentStore) GetRoomOccupancyByDeviceID(ctx context.Context, deviceID string) (*models.RoomOccupancyDetail, error) {
+	// Find the room occupancy
+	var roomOccupancy struct {
+		RoomID     int64
+		TimespanID int64
+	}
+
+	err := s.db.NewSelect().
+		TableExpr("room_occupancies").
+		Column("room_id", "timespan_id").
+		Where("device_id = ?", deviceID).
+		Scan(ctx, &roomOccupancy)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Return the found details
+	return &models.RoomOccupancyDetail{
+		RoomID:     roomOccupancy.RoomID,
+		TimespanID: roomOccupancy.TimespanID,
+	}, nil
 }
