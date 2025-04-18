@@ -111,8 +111,20 @@ func (l *StructuredLoggerEntry) Panic(v any, stack []byte) {
 
 // GetLogEntry return the request scoped logrus.FieldLogger.
 func GetLogEntry(r *http.Request) logrus.FieldLogger {
-	entry := middleware.GetLogEntry(r).(*StructuredLoggerEntry)
-	return entry.Logger
+	// First, safely get the log entry from middleware
+	logEntry := middleware.GetLogEntry(r)
+	if logEntry == nil {
+		// Return a default logger if there's no log entry in the request context
+		return logrus.StandardLogger()
+	}
+
+	// Try to cast to our expected type
+	if entry, ok := logEntry.(*StructuredLoggerEntry); ok {
+		return entry.Logger
+	}
+
+	// Fallback to standard logger if the type assertion fails
+	return logrus.StandardLogger()
 }
 
 // LogEntrySetField adds a field to the request scoped logrus.FieldLogger.
